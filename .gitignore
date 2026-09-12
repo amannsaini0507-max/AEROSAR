@@ -8,6 +8,7 @@ venv/
 
 # ROS 2 / colcon
 build/
+build
 install/
 log/
 
