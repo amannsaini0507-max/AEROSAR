@@ -31,3 +31,4 @@ dist/
 database/*.db
 tmp/
 temp/
+*.deb

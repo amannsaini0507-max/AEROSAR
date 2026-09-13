@@ -14,64 +14,21 @@ WorldInfo {
 }
 Viewpoint {
   orientation -0.5773502691896257 0.5773502691896257 0.5773502691896257 2.0944
-  position 0 0 12
+  position 0 0 14
 }
 TexturedBackground {
 }
 TexturedBackgroundLight {
 }
 RectangleArena {
-  floorSize 12 12
+  floorSize 14 14
 }
 
 # ==========================================================
-# Hazard Objects & Victim Placeholders (Task 1 / Scenarios)
+# Scenario 1 — Flood Zone (~30% coverage) + 2 Survivors at Edge
 # ==========================================================
 
-# 1. Fire Hazard Cube
-Solid {
-  translation 2.5 2.5 0.25
-  rotation 0 0 1 0
-  name "hazard_fire"
-  model "fire"
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 1 0.2 0
-        emissiveColor 1 0.4 0
-        roughness 0.1
-      }
-      geometry Box {
-        size 0.6 0.6 0.5
-      }
-    }
-  ]
-  boundingObject Box {
-    size 0.6 0.6 0.5
-  }
-}
-
-# 2. Smoke Hazard Representation
-Solid {
-  translation 2.8 2.8 0.8
-  rotation 0 0 1 0
-  name "hazard_smoke"
-  model "smoke"
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0.6 0.6 0.6
-        transparency 0.5
-        roughness 0.9
-      }
-      geometry Sphere {
-        radius 0.45
-      }
-    }
-  ]
-}
-
-# 3. Flood Plane Representation
+# 1. Extensive Flood Plane
 Solid {
   translation -2.5 -2.5 0.02
   rotation 0 0 1 0
@@ -86,39 +43,17 @@ Solid {
         metalness 0.7
       }
       geometry Box {
-        size 4 4 0.04
+        size 7 7 0.04
       }
     }
   ]
 }
 
-# 4. Debris Pile Hazard
+# 2. Survivor 1: Placed at the north-eastern edge of the flood zone
 Solid {
-  translation -2.5 2.5 0.25
+  translation 1.2 -2.0 0.15
   rotation 0 0 1 0
-  name "hazard_debris"
-  model "debris"
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0.5 0.45 0.4
-        roughness 0.95
-      }
-      geometry Box {
-        size 1.2 1.2 0.5
-      }
-    }
-  ]
-  boundingObject Box {
-    size 1.2 1.2 0.5
-  }
-}
-
-# 5. Survivor / Victim 1 (Close to Fire Hazard for Scenario 2 Critical Test)
-Solid {
-  translation 2.0 1.8 0.15
-  rotation 0 0 1 0
-  name "victim_1"
+  name "victim_flood_1"
   model "survivor"
   children [
     Shape {
@@ -138,11 +73,11 @@ Solid {
   }
 }
 
-# 6. Survivor / Victim 2 (At edge of Flood Hazard for Scenario 1 Test)
+# 3. Survivor 2: Placed at the north-western edge of the flood zone
 Solid {
-  translation -0.4 -2.5 0.15
+  translation -2.0 1.2 0.15
   rotation 0 0 1 0
-  name "victim_2"
+  name "victim_flood_2"
   model "survivor"
   children [
     Shape {
@@ -162,11 +97,9 @@ Solid {
   }
 }
 
-# ==========================================================
-# DJI Mavic 2 PRO Drone Model with Thermal Proxy Camera
-# ==========================================================
+# 4. Drone Starting Point outside flood zone
 Mavic2Pro {
-  translation 0 0 0.1
+  translation 3.0 3.0 0.1
   rotation 0 0 1 0
   name "Mavic 2 PRO"
   controller "<extern>"

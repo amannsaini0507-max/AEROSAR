@@ -14,23 +14,23 @@ WorldInfo {
 }
 Viewpoint {
   orientation -0.5773502691896257 0.5773502691896257 0.5773502691896257 2.0944
-  position 0 0 12
+  position 0 0 14
 }
 TexturedBackground {
 }
 TexturedBackgroundLight {
 }
 RectangleArena {
-  floorSize 12 12
+  floorSize 14 14
 }
 
 # ==========================================================
-# Hazard Objects & Victim Placeholders (Task 1 / Scenarios)
+# Scenario 2 — Fire + Smoke + CRITICAL Survivor (Primary Demo)
 # ==========================================================
 
-# 1. Fire Hazard Cube
+# 1. Fire Hazard Object (Vibrant glowing emissive box)
 Solid {
-  translation 2.5 2.5 0.25
+  translation 2.5 2.0 0.3
   rotation 0 0 1 0
   name "hazard_fire"
   model "fire"
@@ -38,22 +38,22 @@ Solid {
     Shape {
       appearance PBRAppearance {
         baseColor 1 0.2 0
-        emissiveColor 1 0.4 0
+        emissiveColor 1 0.45 0
         roughness 0.1
       }
       geometry Box {
-        size 0.6 0.6 0.5
+        size 0.8 0.8 0.6
       }
     }
   ]
   boundingObject Box {
-    size 0.6 0.6 0.5
+    size 0.8 0.8 0.6
   }
 }
 
-# 2. Smoke Hazard Representation
+# 2. Smoke Hazard Representation (Semi-transparent rising cloud adjacent to fire)
 Solid {
-  translation 2.8 2.8 0.8
+  translation 2.9 2.4 1.0
   rotation 0 0 1 0
   name "hazard_smoke"
   model "smoke"
@@ -61,64 +61,21 @@ Solid {
     Shape {
       appearance PBRAppearance {
         baseColor 0.6 0.6 0.6
-        transparency 0.5
-        roughness 0.9
-      }
-      geometry Sphere {
-        radius 0.45
-      }
-    }
-  ]
-}
-
-# 3. Flood Plane Representation
-Solid {
-  translation -2.5 -2.5 0.02
-  rotation 0 0 1 0
-  name "hazard_flood"
-  model "flood"
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0.05 0.35 0.85
-        transparency 0.25
-        roughness 0.1
-        metalness 0.7
-      }
-      geometry Box {
-        size 4 4 0.04
-      }
-    }
-  ]
-}
-
-# 4. Debris Pile Hazard
-Solid {
-  translation -2.5 2.5 0.25
-  rotation 0 0 1 0
-  name "hazard_debris"
-  model "debris"
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0.5 0.45 0.4
+        transparency 0.45
         roughness 0.95
       }
-      geometry Box {
-        size 1.2 1.2 0.5
+      geometry Sphere {
+        radius 0.65
       }
     }
   ]
-  boundingObject Box {
-    size 1.2 1.2 0.5
-  }
 }
 
-# 5. Survivor / Victim 1 (Close to Fire Hazard for Scenario 2 Critical Test)
+# 3. CRITICAL Survivor (Within 2.5 meters of the fire hazard)
 Solid {
-  translation 2.0 1.8 0.15
+  translation 1.5 1.0 0.15
   rotation 0 0 1 0
-  name "victim_1"
+  name "victim_critical"
   model "survivor"
   children [
     Shape {
@@ -138,33 +95,7 @@ Solid {
   }
 }
 
-# 6. Survivor / Victim 2 (At edge of Flood Hazard for Scenario 1 Test)
-Solid {
-  translation -0.4 -2.5 0.15
-  rotation 0 0 1 0
-  name "victim_2"
-  model "survivor"
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0.9 0.7 0.3
-        roughness 0.5
-      }
-      geometry Capsule {
-        radius 0.15
-        height 0.6
-      }
-    }
-  ]
-  boundingObject Capsule {
-    radius 0.15
-    height 0.6
-  }
-}
-
-# ==========================================================
-# DJI Mavic 2 PRO Drone Model with Thermal Proxy Camera
-# ==========================================================
+# 4. Drone Model at Standard Launch Point
 Mavic2Pro {
   translation 0 0 0.1
   rotation 0 0 1 0
