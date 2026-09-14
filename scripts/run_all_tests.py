@@ -12,6 +12,12 @@ import os
 import subprocess
 import time
 
+if sys.stdout.encoding != 'utf-8':
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except Exception:
+        pass
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 SCENARIO_SCRIPTS = [
@@ -21,7 +27,8 @@ SCENARIO_SCRIPTS = [
     ("scenario_3_collapsed_building.py", "Scenario 3: Collapsed Building & Obstacle Avoidance"),
     ("scenario_4_gps_denied.py", "Scenario 4: GPS-Denied Mode Transition"),
     ("scenario_5_network_failure.py", "Scenario 5: Network Failure & Sync (Req 7)"),
-    ("test_offline_sync.py", "Offline SQLite Queue Synchronization Test")
+    ("test_offline_sync.py", "Offline SQLite Queue Synchronization Test"),
+    ("test_navigation_member3.py", "Member 3: Navigation & Obstacle Avoidance Suite")
 ]
 
 def main():
@@ -39,13 +46,16 @@ def main():
         print("-" * 70)
         
         try:
-            res = subprocess.run([sys.executable, script_path], capture_output=True, text=True, check=True)
-            print(res.stdout.strip())
-            results.append((description, "PASS ✅"))
+            res = subprocess.run([sys.executable, script_path], capture_output=True, text=True, encoding='utf-8', errors='replace', check=True)
+            if res.stdout:
+                print(res.stdout.strip())
+            results.append((description, "PASS [OK]"))
         except subprocess.CalledProcessError as e:
-            print(e.stdout.strip())
-            print(e.stderr.strip())
-            results.append((description, "FAIL ❌"))
+            if e.stdout:
+                print(e.stdout.strip())
+            if e.stderr:
+                print(e.stderr.strip())
+            results.append((description, "FAIL [ERR]"))
             
     elapsed = round(time.time() - start_time, 2)
     
