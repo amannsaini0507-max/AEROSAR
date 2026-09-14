@@ -20,9 +20,9 @@
 - [ ] Sensor fusion node combines RGB + Thermal proxy, attaches IMU/GPS pose, deduplicates, and publishes `/perception/detection`.
 
 ### Member 3 — Autonomous Navigation (`navigation/`)
-- [ ] Lawnmower/serpentine search pattern node publishes `/navigation/cmd_vel`.
-- [ ] Reactive obstacle avoidance stops/yaws drone when obstacle detected within 2 meters.
-- [ ] GPS-loss transition handler switches navigation mode cleanly to `GPS_DENIED`.
+- [x] Lawnmower/serpentine search pattern node publishes `/navigation/cmd_vel`.
+- [x] Reactive obstacle avoidance stops/yaws drone when obstacle detected within 2 meters.
+- [x] GPS-loss transition handler switches navigation mode cleanly to `GPS_DENIED`.
 
 ### Member 4 — Backend & Risk Engine (`backend/`)
 - [ ] ROS 2 to FastAPI/WebSocket bridge node subscribes to `/perception/detection` and `/perception/hazard`.
