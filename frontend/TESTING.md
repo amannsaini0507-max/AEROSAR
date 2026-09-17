@@ -23,7 +23,9 @@ npm run build     # must pass with zero TypeScript errors
 | 7 | ~14 s later | SYNCING, then CONNECTED; debris + Survivor #4 appear with "synced after reconnect" tags, in time order | |
 | 8 | Mission ends | State Complete, coverage ≥ 80 % | |
 | 9 | Click a priority row | Map flies to that survivor and opens its popup | |
-| 10 | Mission history → Replay this session | Slider scrubs map + priority list back in time | |
+| 10 | Mission history → Replay the mission running now | Slider scrubs map + priority list back in time | |
+| 10b | Let a mission finish, refresh the browser, open Mission history | The mission is listed under "Recorded missions" with its survivor counts, coverage and synced-offline count; **Open** replays it | |
+| 10c | Run a second mission, then check the record book | Both missions listed, newest first; **Delete** removes one | |
 | 11 | Theme toggle, 420 px wide window | Everything readable, no horizontal scroll | |
 
 ## Manual — real WebSocket (`npm run mock:server` + `npm run dev:backend`)

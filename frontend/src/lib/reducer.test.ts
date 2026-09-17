@@ -109,3 +109,25 @@ test('batch messages apply every inner message; malformed messages are ignored',
   assert.equal(m.mission?.state, 'SEARCHING');
   assert.equal(applyMessage(m, null as never, T0), m);
 });
+
+test('mission record book summarises a mission from its events', async () => {
+  const { summarise } = await import('./missionArchive.ts');
+  const ev = (msg: ServerMessage, t: number) => ({ id: String(t), msg, time: t });
+  const events = [
+    ev(status({ state: 'SEARCHING' }), T0),
+    ev({ type: 'detection', data: { id: 'd1', detection_type: 'person', confidence: 0.9, thermal_confirmed: true, latitude: 1, longitude: 2, stamp: T0 + 1000 } }, T0 + 1000),
+    ev({ type: 'risk_score', data: { detection_id: 'd1', score: 0.8, priority_level: 'CRITICAL', reason: 'near fire' } }, T0 + 1100),
+    ev({ type: 'hazard', data: { id: 'h1', hazard_type: 'fire', confidence: 0.9, latitude: 1, longitude: 2, stamp: T0 + 900 } }, T0 + 1200),
+    ev({ type: 'alert', data: { alert_id: 'a1', alert_type: 'CRITICAL_PRIORITY', message: 'x', stamp: T0 + 1100 } }, T0 + 1300),
+    ev(status({ state: 'COMPLETE', coverage_percent: 92 }), T0 + 60_000)
+  ];
+  const s = summarise(events, 'simulator');
+  assert.equal(s?.missionId, 'm1');
+  assert.equal(s?.survivors, 1);
+  assert.equal(s?.hazards, 1);
+  assert.equal(s?.byLevel.CRITICAL, 1);
+  assert.equal(s?.state, 'COMPLETE');
+  assert.equal(s?.coverage, 92);
+  assert.equal(s?.durationMs, 60_000);
+  assert.equal(s?.topReason, 'near fire');
+});

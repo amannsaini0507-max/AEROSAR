@@ -54,7 +54,7 @@ http://localhost:5173/?ws=sim          # force the simulator
 |---|---|
 | **Live operations** `/` | The judge-facing screen: feed (RGB/thermal), mission status, disaster map, survivor priority list, alerts, mission log, link indicator. |
 | **Mission control** | Start / abort mission; data-link diagnostics and per-type message counts (Day 2 "confirm live message receipt"); buttons to rehearse the network cut in the simulator. |
-| **Mission history** | Replay slider for this browser session, or for any mission from `GET /api/missions/{id}/history`. |
+| **Mission history** | Record book of every mission this dashboard has watched (kept in the browser, survives a refresh), each openable on a replay slider. Also loads any mission from `GET /api/missions/{id}/history`. |
 | **Briefing view** | Large-type summary for a projector or second monitor. |
 
 ## How the requirement-8 elements map to the screen (§14.3)
@@ -79,7 +79,8 @@ src/
   lib/derive.ts            link indicator, priority ordering, alert colours
   lib/levels.ts            priority colours/labels — one place for §14.4
   lib/time.ts              stamp normalisation (ROS Time / ISO / epoch)
-  lib/replay.ts            mission replay from session log or REST history
+  lib/replay.ts            mission replay from session log, record book or REST history
+  lib/missionArchive.ts    record book: saves each mission in the browser (localStorage)
   lib/config.ts            VITE_WS_URL / VITE_API_BASE / ?ws= override
   hooks/useMissionFeed.ts  WebSocket (auto-reconnect) or simulator
   mock/scenario.ts         demo scenario engine (browser + mock server)
@@ -93,6 +94,8 @@ mock-server/server.ts      mock backend
 
 - **No business logic in the dashboard.** Scores, priority levels and reasons come from the backend.
 - **Order by event time, not arrival** (§13.6). Deduplicate by id (§13.4).
+- **The record book is a convenience, not the record.** Member 4's events table stays authoritative; the browser copy is
+  per-laptop, keeps the last 12 missions, and is clearly labelled when it holds simulated data.
 - **Honest labels.** Simulated data, simulated video and indicative hazard zones are labelled as such (§17, §21.2).
 - **Works without internet at the venue.** Leaflet CSS is bundled; if map tiles can't load, markers
   still draw on a grid. Fonts fall back to system fonts.
