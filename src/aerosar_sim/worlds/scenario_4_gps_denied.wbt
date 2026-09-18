@@ -1,0 +1,119 @@
+#VRML_SIM R2023b utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
+
+WorldInfo {
+  basicTimeStep 8
+  defaultDamping Damping {
+    linear 0.5
+    angular 0.5
+  }
+}
+Viewpoint {
+  orientation -0.5773502691896257 0.5773502691896257 0.5773502691896257 2.0944
+  position 0 0 14
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+RectangleArena {
+  floorSize 14 14
+}
+
+# ==========================================================
+# Scenario 4 — Covered Structure (Designated GPS-Denied Zone)
+# Zone boundaries: x: [-4.5, -1.2], y: [0.8, 4.0], z: [0.0, 5.0]
+# ==========================================================
+
+# 1. Covered Concrete Overhead Tunnel / Slab
+Solid {
+  translation -2.8 2.4 2.2
+  rotation 0 0 1 0
+  name "gps_denied_structure_roof"
+  model "concrete_roof"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.45 0.45 0.45
+        roughness 0.8
+      }
+      geometry Box {
+        size 3.4 3.2 0.2
+      }
+    }
+  ]
+  boundingObject Box {
+    size 3.4 3.2 0.2
+  }
+}
+
+# 2. Structural Support Pillars
+Solid {
+  translation -4.2 1.0 1.0
+  name "gps_denied_pillar_1"
+  children [
+    Shape {
+      appearance PBRAppearance { baseColor 0.4 0.4 0.4 }
+      geometry Box { size 0.3 0.3 2.0 }
+    }
+  ]
+}
+
+Solid {
+  translation -1.4 3.8 1.0
+  name "gps_denied_pillar_2"
+  children [
+    Shape {
+      appearance PBRAppearance { baseColor 0.4 0.4 0.4 }
+      geometry Box { size 0.3 0.3 2.0 }
+    }
+  ]
+}
+
+# 3. Trapped Survivor inside the covered tunnel
+Solid {
+  translation -2.8 2.4 0.15
+  rotation 0 0 1 0
+  name "victim_gps_denied"
+  model "survivor"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 0.75 0.2
+        roughness 0.5
+      }
+      geometry Capsule {
+        radius 0.15
+        height 0.6
+      }
+    }
+  ]
+  boundingObject Capsule {
+    radius 0.15
+    height 0.6
+  }
+}
+
+# 4. Drone Model starting outside in open sky
+Mavic2Pro {
+  translation 1.5 -1.5 0.1
+  rotation 0 0 1 0
+  name "Mavic 2 PRO"
+  controller "<extern>"
+  cameraSlot [
+    Camera {
+      name "camera"
+      width 400
+      height 240
+    }
+    Camera {
+      name "thermal_camera"
+      width 400
+      height 240
+    }
+  ]
+}

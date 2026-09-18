@@ -1,0 +1,33 @@
+<?xml version="1.0" ?>
+<robot name="Mavic 2 PRO">
+    <webots>
+        <device reference="camera" type="Camera">
+            <ros>
+                <enabled>true</enabled>
+                <alwaysOn>true</alwaysOn>
+                <updateRate>20</updateRate>
+                <topicName>/camera</topicName>
+                <imageSuffix>/image_raw</imageSuffix>
+            </ros>
+        </device>
+        <device reference="thermal_camera" type="Camera">
+            <ros>
+                <enabled>true</enabled>
+                <alwaysOn>true</alwaysOn>
+                <updateRate>10</updateRate>
+                <topicName>/thermal</topicName>
+                <imageSuffix>/image_raw</imageSuffix>
+            </ros>
+        </device>
+        <plugin type="webots_ros2_driver::Ros2IMU">
+            <enabled>true</enabled>
+            <alwaysOn>true</alwaysOn>
+            <updateRate>50</updateRate>
+            <topicName>/imu/data</topicName>
+            <frameName>imu_link</frameName>
+            <inertialUnitName>inertial unit</inertialUnitName>
+            <gyroName>gyro</gyroName>
+        </plugin>
+        <plugin type="aerosar_sim.drone_driver.DroneDriver" />
+    </webots>
+</robot>

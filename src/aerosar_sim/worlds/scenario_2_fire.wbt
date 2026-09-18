@@ -1,0 +1,116 @@
+#VRML_SIM R2023b utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
+
+WorldInfo {
+  basicTimeStep 8
+  defaultDamping Damping {
+    linear 0.5
+    angular 0.5
+  }
+}
+Viewpoint {
+  orientation -0.5773502691896257 0.5773502691896257 0.5773502691896257 2.0944
+  position 0 0 14
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+RectangleArena {
+  floorSize 14 14
+}
+
+# ==========================================================
+# Scenario 2 — Fire + Smoke + CRITICAL Survivor (Primary Demo)
+# ==========================================================
+
+# 1. Fire Hazard Object (Vibrant glowing emissive box)
+Solid {
+  translation 2.5 2.0 0.3
+  rotation 0 0 1 0
+  name "hazard_fire"
+  model "fire"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 0.2 0
+        emissiveColor 1 0.45 0
+        roughness 0.1
+      }
+      geometry Box {
+        size 0.8 0.8 0.6
+      }
+    }
+  ]
+  boundingObject Box {
+    size 0.8 0.8 0.6
+  }
+}
+
+# 2. Smoke Hazard Representation (Semi-transparent rising cloud adjacent to fire)
+Solid {
+  translation 2.9 2.4 1.0
+  rotation 0 0 1 0
+  name "hazard_smoke"
+  model "smoke"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.6 0.6 0.6
+        transparency 0.45
+        roughness 0.95
+      }
+      geometry Sphere {
+        radius 0.65
+      }
+    }
+  ]
+}
+
+# 3. CRITICAL Survivor (Within 2.5 meters of the fire hazard)
+Solid {
+  translation 1.5 1.0 0.15
+  rotation 0 0 1 0
+  name "victim_critical"
+  model "survivor"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 0.75 0.2
+        roughness 0.5
+      }
+      geometry Capsule {
+        radius 0.15
+        height 0.6
+      }
+    }
+  ]
+  boundingObject Capsule {
+    radius 0.15
+    height 0.6
+  }
+}
+
+# 4. Drone Model at Standard Launch Point
+Mavic2Pro {
+  translation 0 0 0.1
+  rotation 0 0 1 0
+  name "Mavic 2 PRO"
+  controller "<extern>"
+  cameraSlot [
+    Camera {
+      name "camera"
+      width 400
+      height 240
+    }
+    Camera {
+      name "thermal_camera"
+      width 400
+      height 240
+    }
+  ]
+}

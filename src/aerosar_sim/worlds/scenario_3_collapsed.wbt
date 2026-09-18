@@ -1,0 +1,117 @@
+#VRML_SIM R2023b utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
+
+WorldInfo {
+  basicTimeStep 8
+  defaultDamping Damping {
+    linear 0.5
+    angular 0.5
+  }
+}
+Viewpoint {
+  orientation -0.5773502691896257 0.5773502691896257 0.5773502691896257 2.0944
+  position 0 0 14
+}
+TexturedBackground {
+}
+TexturedBackgroundLight {
+}
+RectangleArena {
+  floorSize 14 14
+}
+
+# ==========================================================
+# Scenario 3 — Collapsed Building + Debris Footprint + Survivor
+# ==========================================================
+
+# 1. Tilted Collapsed Slab / Structure
+Solid {
+  translation -2.5 2.5 0.8
+  rotation 0.7071 0.7071 0 0.4
+  name "hazard_damaged_structure"
+  model "collapsed_building"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.55 0.52 0.48
+        roughness 0.9
+      }
+      geometry Box {
+        size 3.0 2.5 0.3
+      }
+    }
+  ]
+  boundingObject Box {
+    size 3.0 2.5 0.3
+  }
+}
+
+# 2. Heavy Debris Pile Surrounding Structure
+Solid {
+  translation -1.2 1.8 0.25
+  rotation 0 0 1 0.3
+  name "hazard_debris"
+  model "debris"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.4 0.38 0.35
+        roughness 0.95
+      }
+      geometry Box {
+        size 1.5 1.5 0.5
+      }
+    }
+  ]
+  boundingObject Box {
+    size 1.5 1.5 0.5
+  }
+}
+
+# 3. Trapped Survivor Partially Under Structure Footprint
+Solid {
+  translation -2.2 2.2 0.15
+  rotation 0 0 1 0
+  name "victim_trapped"
+  model "survivor"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 0.75 0.2
+        roughness 0.5
+      }
+      geometry Capsule {
+        radius 0.15
+        height 0.6
+      }
+    }
+  ]
+  boundingObject Capsule {
+    radius 0.15
+    height 0.6
+  }
+}
+
+# 4. Drone Model at Standard Launch Point
+Mavic2Pro {
+  translation 0 0 0.1
+  rotation 0 0 1 0
+  name "Mavic 2 PRO"
+  controller "<extern>"
+  cameraSlot [
+    Camera {
+      name "camera"
+      width 400
+      height 240
+    }
+    Camera {
+      name "thermal_camera"
+      width 400
+      height 240
+    }
+  ]
+}
