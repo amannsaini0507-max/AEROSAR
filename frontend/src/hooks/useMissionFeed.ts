@@ -3,6 +3,8 @@ import type { MissionModel } from '../types';
 import { applyMessage, createInitialModel, parseFrame } from '../lib/reducer';
 import { createScenario, type ScenarioControls } from '../mock/scenario';
 import { API_BASE } from '../lib/config';
+import { fromSessionLog } from '../lib/replay';
+import { saveMission } from '../lib/missionArchive';
 import type { ServerMessage } from '../types';
 
 export interface RecordedMessage {
@@ -44,6 +46,9 @@ export function useMissionFeed(wsUrl: string | null) {
   const [now, setNow] = useState(() => Date.now());
   const scenarioRef = useRef<ScenarioControls | null>(null);
   const sessionLog = useRef<RecordedMessage[]>([]);
+  // Where in the session log the current mission starts, so each mission is archived on its own.
+  const missionStart = useRef(0);
+  const lastArchive = useRef(0);
 
   const ingest = useCallback((msg: ServerMessage) => {
     const log = sessionLog.current;
@@ -62,6 +67,8 @@ export function useMissionFeed(wsUrl: string | null) {
     let cancelled = false;
     setModel(createInitialModel(source));
     sessionLog.current = [];
+    missionStart.current = 0;
+    lastArchive.current = 0;
 
     if (!wsUrl) {
       const scenario = createScenario((msg) => {
@@ -131,6 +138,26 @@ export function useMissionFeed(wsUrl: string | null) {
       ? { cutLink: () => scenarioRef.current?.cutLink(), restoreLink: () => scenarioRef.current?.restoreLink() }
       : {})
   };
+
+  // Keep a record of every mission in this browser, so Mission history can reopen it later.
+  const missionId = model.mission?.missionId ?? null;
+  const missionState = model.mission?.state ?? null;
+  const knownMission = useRef<string | null>(null);
+  useEffect(() => {
+    if (!missionId) return;
+    if (knownMission.current !== missionId) {
+      knownMission.current = missionId;
+      // The mission's first message is roughly where the log stood when it appeared.
+      missionStart.current = Math.max(0, sessionLog.current.length - 1);
+      lastArchive.current = 0;
+    }
+    const finished = missionState === 'COMPLETE';
+    const now = Date.now();
+    if (!finished && now - lastArchive.current < 8000) return;
+    lastArchive.current = now;
+    const events = fromSessionLog(sessionLog.current.slice(missionStart.current));
+    if (events.length) saveMission(events, source);
+  }, [missionId, missionState, model.lastMessageAt, source]);
 
   const getSessionLog = useCallback(() => sessionLog.current.slice(), []);
 

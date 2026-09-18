@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import type { LayoutContext } from '../layouts/AppLayout';
 import { API_BASE } from '../lib/config';
 import { fromHistoryRows, fromSessionLog, modelAt, type HistoryEventRow, type ReplayEvent } from '../lib/replay';
 import { formatClock, formatDuration } from '../lib/time';
+import { deleteMission, listMissions, loadMissionEvents, type MissionSummary } from '../lib/missionArchive';
 import MapPanel from '../components/MapPanel';
 import PriorityList from '../components/PriorityList';
 import LevelBadge from '../components/LevelBadge';
@@ -42,11 +43,31 @@ export default function MissionHistory() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [archive, setArchive] = useState<MissionSummary[]>([]);
+
+  const refreshArchive = useCallback(() => setArchive(listMissions()), []);
+  useEffect(refreshArchive, [refreshArchive, model.mission?.missionId, model.mission?.state]);
 
   function show(label: string, events: ReplayEvent[]) {
     setLoaded({ label, events });
     setCursor(events.length ? events[events.length - 1].time : 0);
     setSelectedId(null);
+  }
+
+  function openArchived(summary: MissionSummary) {
+    const events = loadMissionEvents(summary.missionId);
+    if (events.length === 0) {
+      setError(`No saved events left for ${summary.missionId}.`);
+      return;
+    }
+    setError(null);
+    show(`${summary.missionId} (recorded ${new Date(summary.startedAt).toLocaleString()})`, events);
+  }
+
+  function removeArchived(summary: MissionSummary) {
+    deleteMission(summary.missionId);
+    refreshArchive();
+    if (loaded?.label.startsWith(summary.missionId)) setLoaded(null);
   }
 
   function loadSession() {
@@ -106,17 +127,86 @@ export default function MissionHistory() {
       <div className="page-header">
         <div>
           <h1 className="page-header__title">Mission history</h1>
-          <p className="page-header__subtitle">Scrub back through a mission to see what the dashboard showed at any moment.</p>
+          <p className="page-header__subtitle">A record of the missions this dashboard has watched. Open one to scrub back through it.</p>
         </div>
       </div>
+
+      <section className="panel">
+        <div className="panel__head">
+          <span className="panel__title">Recorded missions</span>
+          <span className="panel__count">{archive.length ? `${archive.length} saved in this browser` : 'none yet'}</span>
+        </div>
+        <div className="panel__body">
+          {archive.length === 0 ? (
+            <div className="empty-state">
+              <strong>No missions recorded yet</strong>
+              <span>Every mission this dashboard watches is saved here automatically, and stays after a refresh.</span>
+            </div>
+          ) : (
+            <div className="table-scroll">
+              <table className="history-table record-book">
+                <thead>
+                  <tr>
+                    <th>Started</th>
+                    <th>Mission</th>
+                    <th>Length</th>
+                    <th>Survivors</th>
+                    <th>Hazards</th>
+                    <th>Coverage</th>
+                    <th>Offline</th>
+                    <th>Ended</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  {archive.map((m) => (
+                    <tr key={m.missionId}>
+                      <td>{new Date(m.startedAt).toLocaleString([], { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</td>
+                      <td className="mono">
+                        {m.missionId}
+                        {m.source === 'simulator' && <span className="tag tag--sim">sim</span>}
+                      </td>
+                      <td className="mono">{formatDuration(m.durationMs / 1000)}</td>
+                      <td>
+                        <span className="count-chips">
+                          <strong>{m.survivors}</strong>
+                          {(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const)
+                            .filter((lvl) => m.byLevel?.[lvl])
+                            .map((lvl) => (
+                              <span key={lvl} className={`dot-count level-${lvl.toLowerCase()}`}>
+                                {m.byLevel[lvl]}
+                              </span>
+                            ))}
+                        </span>
+                      </td>
+                      <td>{m.hazards}</td>
+                      <td>{Math.round(m.coverage)}%</td>
+                      <td>{m.offlineEvents > 0 ? `${m.offlineEvents} synced` : '—'}</td>
+                      <td>{m.state === 'COMPLETE' ? 'Complete' : m.state.charAt(0) + m.state.slice(1).toLowerCase()}</td>
+                      <td className="record-book__actions">
+                        <button type="button" className="btn btn--ghost btn--small" onClick={() => openArchived(m)}>
+                          Open
+                        </button>
+                        <button type="button" className="link-btn" onClick={() => removeArchived(m)} title="Remove from this browser">
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </section>
 
       <section className="panel">
         <div className="panel__body panel__body--padded">
           <div className="history-controls">
             <button className="btn btn--primary" type="button" onClick={loadSession}>
-              Replay this session
+              Replay the mission running now
             </button>
-            <span className="history-controls__or">or load from the backend</span>
+            <span className="history-controls__or">or load one from the backend</span>
             <div className="form-field form-field--inline">
               <label htmlFor="missionId" className="visually-hidden">
                 Mission ID

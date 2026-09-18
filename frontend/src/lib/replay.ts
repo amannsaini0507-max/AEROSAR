@@ -7,6 +7,8 @@ export interface ReplayEvent {
   msg: ServerMessage;
   /** When it happened (drone clock), falling back to when it was received. */
   time: number;
+  /** When the dashboard actually received it, when known — a later value means it was synced after a link loss. */
+  receivedAt?: number;
 }
 
 /** Row shape of the backend events table (master doc §13.2), as served by /api/missions/{id}/history. */
@@ -39,9 +41,9 @@ export function fromSessionLog(log: { msg: ServerMessage; receivedAt: number }[]
   const out: ReplayEvent[] = [];
   log.forEach(({ msg, receivedAt }, i) => {
     if (msg.type === 'batch') {
-      msg.data.forEach((inner, j) => out.push({ id: `s${i}.${j}`, msg: inner, time: timeOf(inner, receivedAt) }));
+      msg.data.forEach((inner, j) => out.push({ id: `s${i}.${j}`, msg: inner, time: timeOf(inner, receivedAt), receivedAt }));
     } else if (msg.type !== 'video_frame' && msg.type !== 'sync_status') {
-      out.push({ id: `s${i}`, msg, time: timeOf(msg, receivedAt) });
+      out.push({ id: `s${i}`, msg, time: timeOf(msg, receivedAt), receivedAt });
     }
   });
   return sortEvents(out);
@@ -61,7 +63,8 @@ export function fromHistoryRows(rows: HistoryEventRow[]): ReplayEvent[] {
       }
     }
     const created = stampToMs(row.created_at as never, Date.now());
-    out.push({ id: row.event_id, msg: { type, data } as ServerMessage, time: created });
+    const synced = row.synced_at != null ? stampToMs(row.synced_at as never, created) : undefined;
+    out.push({ id: row.event_id, msg: { type, data } as ServerMessage, time: created, receivedAt: synced });
   });
   return sortEvents(out);
 }
@@ -79,7 +82,7 @@ export function modelAt(events: ReplayEvent[], cursor: number, source: FeedSourc
   let model: MissionModel = { ...createInitialModel(source), socket: 'open' };
   for (const ev of events) {
     if (ev.time > cursor) break;
-    model = applyMessage(model, ev.msg, ev.time);
+    model = applyMessage(model, ev.msg, Math.max(ev.time, ev.receivedAt ?? ev.time));
   }
   return model;
 }
