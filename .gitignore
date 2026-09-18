@@ -1,34 +1,3 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-.venv/
-venv/
-.env
-
-# ROS 2 / colcon
 build/
-build
 install/
 log/
-
-# Webots
-*.wbt.bak
-
-# Node / frontend
-node_modules/
-dist/
-.next/
-
-# IDE / OS
-.vscode/
-.idea/
-.DS_Store
-
-# Logs and temporary database files
-*.log
-*.db
-database/*.db
-tmp/
-temp/
-*.deb
