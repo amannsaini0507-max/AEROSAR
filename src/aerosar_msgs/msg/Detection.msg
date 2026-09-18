@@ -1,0 +1,12 @@
+string id                  
+string detection_type      
+float32 confidence         
+float32 bbox_x
+float32 bbox_y
+float32 bbox_w
+float32 bbox_h
+bool thermal_confirmed      
+float64 latitude            
+float64 longitude
+float64 altitude
+builtin_interfaces/Time stamp
