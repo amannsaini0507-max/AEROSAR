@@ -28,7 +28,10 @@ dist/
 # Logs and temporary database files
 *.log
 *.db
+*.db3
 database/*.db
+data/bags/*
+!data/bags/.gitkeep
 tmp/
 temp/
 *.deb

@@ -14,13 +14,16 @@ setup(
         ('share/' + package_name + '/launch', glob('launch/*.py')),
         ('share/' + package_name + '/worlds', glob('worlds/*.wbt')),
         ('share/' + package_name + '/resource', glob('resource/*')),
+        ('share/' + package_name + '/scripts', glob('scripts/*')),
+        ('lib/' + package_name, glob('scripts/*')),
     ],
+    scripts=glob('scripts/*'),
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='saksh',
+    maintainer='Member 1 (Drone Sim & ROS 2 Lead)',
     maintainer_email='amann.saini.0507@gmail.com',
     description='AEROSAR Webots Simulation and Drone ROS 2 Driver',
-    license='MIT',
+    license='Apache-2.0',
     extras_require={
         'test': [
             'pytest',
@@ -28,6 +31,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'webots_drone_node = aerosar_sim.webots_drone_node:main',
         ],
     },
 )

@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>aerosar_bringup</name>
+  <version>1.0.0</version>
+  <description>Master system bringup package for AEROSAR Search and Rescue drone platform</description>
+  <maintainer email="amann.saini.0507@gmail.com">Member 1 (Drone Sim &amp; ROS 2 Lead)</maintainer>
+  <license>Apache-2.0</license>
+
+  <depend>rclpy</depend>
+  <depend>launch</depend>
+  <depend>launch_ros</depend>
+  <depend>webots_ros2_driver</depend>
+  <depend>aerosar_msgs</depend>
+  <depend>aerosar_sim</depend>
+  <depend>aerosar_perception</depend>
+  <depend>aerosar_navigation</depend>
+  <depend>aerosar_backend_bridge</depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

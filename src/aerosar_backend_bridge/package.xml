@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>aerosar_backend_bridge</name>
+  <version>0.1.0</version>
+  <description>AEROSAR Member 4 Backend &amp; Data Integration Bridge</description>
+  <maintainer email="member4@aerosar.internal">Member 4 (Backend Lead)</maintainer>
+  <license>Apache-2.0</license>
+
+  <depend>rclpy</depend>
+  <depend>aerosar_msgs</depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

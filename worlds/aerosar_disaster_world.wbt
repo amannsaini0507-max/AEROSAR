@@ -1,0 +1,321 @@
+#VRML_SIM R2023b utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
+
+WorldInfo {
+  basicTimeStep 8
+  defaultDamping Damping {
+    linear 0.5
+    angular 0.5
+  }
+}
+
+Viewpoint {
+  orientation -0.5773502691896257 0.5773502691896257 0.5773502691896257 2.0944
+  position 0 -6 16
+}
+
+TexturedBackground {
+}
+
+TexturedBackgroundLight {
+}
+
+RectangleArena {
+  floorSize 24 24
+  floorTileSize 2 2
+}
+
+# ==============================================================================
+# DISASTER TERRAIN & OBSTACLE ZONES
+# ==============================================================================
+
+# Obstacle Zone A: Collapsed Structure Block 1
+Solid {
+  translation 5.0 4.0 1.0
+  rotation 0 0 1 0.35
+  name "obstacle_collapsed_slab_1"
+  model "collapsed_concrete_slab"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.45 0.45 0.43
+        roughness 0.95
+        metalness 0.1
+      }
+      geometry Box {
+        size 3.5 2.5 2.0
+      }
+    }
+  ]
+  boundingObject Box {
+    size 3.5 2.5 2.0
+  }
+}
+
+# Obstacle Zone A: Collapsed Structure Block 2
+Solid {
+  translation 6.2 2.0 0.6
+  rotation 0 0 1 -0.2
+  name "obstacle_rubble_pile_2"
+  model "rubble_pile"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.40 0.38 0.35
+        roughness 0.98
+      }
+      geometry Box {
+        size 2.5 2.0 1.2
+      }
+    }
+  ]
+  boundingObject Box {
+    size 2.5 2.0 1.2
+  }
+}
+
+# Obstacle Zone B: Concrete Wall Barrier (Damaged structure)
+Solid {
+  translation -4.0 2.5 1.2
+  rotation 0 0 1 0
+  name "obstacle_ruined_wall"
+  model "damaged_wall"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.52 0.50 0.48
+        roughness 0.9
+      }
+      geometry Box {
+        size 0.5 5.0 2.4
+      }
+    }
+  ]
+  boundingObject Box {
+    size 0.5 5.0 2.4
+  }
+}
+
+# Obstacle Zone C: Debris Mound & Obstacle Cluster
+Solid {
+  translation 3.0 -4.5 0.5
+  rotation 0 0 1 0.78
+  name "hazard_debris"
+  model "debris"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.35 0.32 0.30
+        roughness 0.95
+      }
+      geometry Box {
+        size 2.8 2.8 1.0
+      }
+    }
+  ]
+  boundingObject Box {
+    size 2.8 2.8 1.0
+  }
+}
+
+# Obstacle Zone D: Covered Structure (GPS-Denied Tunnel/Roof)
+Solid {
+  translation -3.0 4.0 2.2
+  rotation 0 0 1 0
+  name "obstacle_covered_structure"
+  model "covered_tunnel"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.3 0.3 0.32
+        roughness 0.9
+      }
+      geometry Box {
+        size 3.5 3.5 0.2
+      }
+    }
+  ]
+  boundingObject Box {
+    size 3.5 3.5 0.2
+  }
+}
+
+# ==============================================================================
+# DISASTER HAZARD PROXIES
+# ==============================================================================
+
+# 1. Fire Hazard Proxy (Intense Thermal & RGB Signature)
+Solid {
+  translation 2.5 2.5 0.3
+  rotation 0 0 1 0
+  name "hazard_fire"
+  model "fire"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 0.22 0.02
+        emissiveColor 1 0.45 0.05
+        roughness 0.15
+      }
+      geometry Box {
+        size 0.8 0.8 0.6
+      }
+    }
+  ]
+  boundingObject Box {
+    size 0.8 0.8 0.6
+  }
+}
+
+# 2. Smoke Hazard Proxy (Atmospheric Occlusion)
+Solid {
+  translation 2.7 2.7 1.1
+  rotation 0 0 1 0
+  name "hazard_smoke"
+  model "smoke"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.58 0.58 0.58
+        transparency 0.55
+        roughness 0.95
+      }
+      geometry Sphere {
+        radius 0.65
+      }
+    }
+  ]
+}
+
+# 3. Flood Plane Hazard (Semi-Transparent Water Surface)
+Solid {
+  translation -3.5 -3.5 0.02
+  rotation 0 0 1 0
+  name "hazard_flood"
+  model "flood"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.06 0.38 0.82
+        transparency 0.25
+        roughness 0.10
+        metalness 0.70
+      }
+      geometry Box {
+        size 7.0 7.0 0.04
+      }
+    }
+  ]
+}
+
+# ==============================================================================
+# SURVIVOR / VICTIM MODELS (Tagged for RGB & Thermal Detection)
+# ==============================================================================
+
+# Survivor 1: Trapped Near Fire Hazard (High Thermal & RGB Signature)
+Solid {
+  translation 1.8 1.8 0.2
+  rotation 0 0 1 0.5
+  name "victim_1"
+  model "survivor"
+  description "survivor_thermal_confirmed_victim_1"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.98 0.72 0.25
+        emissiveColor 0.35 0.15 0.05
+        roughness 0.4
+      }
+      geometry Capsule {
+        radius 0.18
+        height 0.7
+      }
+    }
+  ]
+  boundingObject Capsule {
+    radius 0.18
+    height 0.7
+  }
+}
+
+# Survivor 2: Flood Zone Margin (Reflective Color Profile)
+Solid {
+  translation -0.8 -2.5 0.2
+  rotation 0 0 1 -0.8
+  name "victim_2"
+  model "survivor"
+  description "survivor_flood_edge_victim_2"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.95 0.85 0.15
+        roughness 0.45
+      }
+      geometry Capsule {
+        radius 0.18
+        height 0.7
+      }
+    }
+  ]
+  boundingObject Capsule {
+    radius 0.18
+    height 0.7
+  }
+}
+
+# Survivor 3: Partially Occluded in Debris Zone
+Solid {
+  translation -2.5 3.8 0.2
+  rotation 0 0 1 1.2
+  name "victim_3"
+  model "survivor"
+  description "survivor_rubble_trapped_victim_3"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.88 0.45 0.20
+        emissiveColor 0.20 0.10 0.05
+        roughness 0.5
+      }
+      geometry Capsule {
+        radius 0.18
+        height 0.7
+      }
+    }
+  ]
+  boundingObject Capsule {
+    radius 0.18
+    height 0.7
+  }
+}
+
+# ==============================================================================
+# QUADROTOR DRONE MODEL (DJI Mavic 2 Pro with Sensor Suite)
+# ==============================================================================
+Mavic2Pro {
+  translation 0 0 0.15
+  rotation 0 0 1 0
+  name "Mavic 2 PRO"
+  controller "<extern>"
+  cameraSlot [
+    Camera {
+      name "camera"
+      width 400
+      height 240
+      fieldOfView 1.05
+    }
+    Camera {
+      name "thermal_camera"
+      width 400
+      height 240
+      fieldOfView 1.05
+    }
+    Accelerometer {
+      name "accelerometer"
+    }
+  ]
+}

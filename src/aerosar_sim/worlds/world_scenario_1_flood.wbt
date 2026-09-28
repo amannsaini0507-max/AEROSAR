@@ -1,0 +1,142 @@
+#VRML_SIM R2023b utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
+
+WorldInfo {
+  basicTimeStep 8
+  defaultDamping Damping {
+    linear 0.5
+    angular 0.5
+  }
+}
+
+Viewpoint {
+  orientation -0.5773502691896257 0.5773502691896257 0.5773502691896257 2.0944
+  position 0 0 14
+}
+
+TexturedBackground {
+}
+
+TexturedBackgroundLight {
+}
+
+RectangleArena {
+  floorSize 16 16
+  floorTileSize 2 2
+}
+
+# ==========================================================
+# Scenario 1 — Flood Disaster + Victims
+# ==========================================================
+
+# 1. Flood Plane
+Solid {
+  translation -2.5 -2.5 0.02
+  rotation 0 0 1 0
+  name "hazard_flood"
+  model "flood"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.05 0.35 0.85
+        transparency 0.25
+        roughness 0.1
+        metalness 0.7
+      }
+      geometry Box {
+        size 8 8 0.04
+      }
+    }
+  ]
+}
+
+# 2. Survivor 1: At margin of flood
+Solid {
+  translation 1.5 -2.0 0.15
+  rotation 0 0 1 0
+  name "victim_flood_1"
+  model "survivor"
+  description "survivor_victim_flood_1"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 0.75 0.2
+        roughness 0.5
+      }
+      geometry Capsule {
+        radius 0.18
+        height 0.7
+      }
+    }
+  ]
+  boundingObject Capsule {
+    radius 0.18
+    height 0.7
+  }
+}
+
+# 3. Survivor 2: Partially submerged / stranded
+Solid {
+  translation -2.0 -0.5 0.15
+  rotation 0 0 1 0
+  name "victim_flood_2"
+  model "survivor"
+  description "survivor_victim_flood_2"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.9 0.7 0.3
+        roughness 0.5
+      }
+      geometry Capsule {
+        radius 0.18
+        height 0.7
+      }
+    }
+  ]
+  boundingObject Capsule {
+    radius 0.18
+    height 0.7
+  }
+}
+
+# 4. Obstacle Block: Elevated refuge
+Solid {
+  translation 2.0 -3.5 0.3
+  rotation 0 0 1 0
+  name "obstacle_sandbags"
+  children [
+    Shape {
+      appearance PBRAppearance { baseColor 0.6 0.55 0.45 }
+      geometry Box { size 2.0 1.2 0.6 }
+    }
+  ]
+  boundingObject Box { size 2.0 1.2 0.6 }
+}
+
+# 5. Drone Starting Point outside flood zone
+Mavic2Pro {
+  translation 3.0 3.0 0.1
+  rotation 0 0 1 0
+  name "Mavic 2 PRO"
+  controller "<extern>"
+  cameraSlot [
+    Camera {
+      name "camera"
+      width 400
+      height 240
+    }
+    Camera {
+      name "thermal_camera"
+      width 400
+      height 240
+    }
+    Accelerometer {
+      name "accelerometer"
+    }
+  ]
+}

@@ -1,0 +1,140 @@
+#VRML_SIM R2023b utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
+
+WorldInfo {
+  basicTimeStep 8
+  defaultDamping Damping {
+    linear 0.5
+    angular 0.5
+  }
+}
+
+Viewpoint {
+  orientation -0.5773502691896257 0.5773502691896257 0.5773502691896257 2.0944
+  position 0 0 14
+}
+
+TexturedBackground {
+}
+
+TexturedBackgroundLight {
+}
+
+RectangleArena {
+  floorSize 16 16
+  floorTileSize 2 2
+}
+
+# ==========================================================
+# Scenario 2 — Fire / Smoke Hazard + Survivor
+# ==========================================================
+
+# 1. Fire Hazard Object
+Solid {
+  translation 2.5 2.0 0.3
+  rotation 0 0 1 0
+  name "hazard_fire"
+  model "fire"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 0.2 0
+        emissiveColor 1 0.45 0
+        roughness 0.1
+      }
+      geometry Box {
+        size 0.8 0.8 0.6
+      }
+    }
+  ]
+  boundingObject Box {
+    size 0.8 0.8 0.6
+  }
+}
+
+# 2. Smoke Hazard Representation
+Solid {
+  translation 2.9 2.4 1.0
+  rotation 0 0 1 0
+  name "hazard_smoke"
+  model "smoke"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.6 0.6 0.6
+        transparency 0.5
+        roughness 0.9
+      }
+      geometry Sphere {
+        radius 0.6
+      }
+    }
+  ]
+}
+
+# 3. Critical Survivor
+Solid {
+  translation 1.5 1.5 0.15
+  rotation 0 0 1 0
+  name "victim_fire_critical"
+  model "survivor"
+  description "survivor_victim_fire_critical"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.95 0.7 0.2
+        emissiveColor 0.3 0.1 0.0
+        roughness 0.5
+      }
+      geometry Capsule {
+        radius 0.18
+        height 0.7
+      }
+    }
+  ]
+  boundingObject Capsule {
+    radius 0.18
+    height 0.7
+  }
+}
+
+# 4. Obstacle Block: Charred debris barrier
+Solid {
+  translation 0.5 3.0 0.4
+  rotation 0 0 1 0.5
+  name "obstacle_charred_barrier"
+  children [
+    Shape {
+      appearance PBRAppearance { baseColor 0.2 0.2 0.2 roughness 0.95 }
+      geometry Box { size 2.5 0.6 0.8 }
+    }
+  ]
+  boundingObject Box { size 2.5 0.6 0.8 }
+}
+
+# 5. Drone Starting Position
+Mavic2Pro {
+  translation -2.0 -2.0 0.1
+  rotation 0 0 1 0
+  name "Mavic 2 PRO"
+  controller "<extern>"
+  cameraSlot [
+    Camera {
+      name "camera"
+      width 400
+      height 240
+    }
+    Camera {
+      name "thermal_camera"
+      width 400
+      height 240
+    }
+    Accelerometer {
+      name "accelerometer"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>aerosar_perception</name>
+  <version>0.1.0</version>
+  <description>AEROSAR Member 2 Perception and Sensor Fusion Subsystem</description>
+  <maintainer email="member2@aerosar.internal">Member 2 (AI/CV Lead)</maintainer>
+  <license>Apache-2.0</license>
+
+  <depend>rclpy</depend>
+  <depend>sensor_msgs</depend>
+  <depend>aerosar_msgs</depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

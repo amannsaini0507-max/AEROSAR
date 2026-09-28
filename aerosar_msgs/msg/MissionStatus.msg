@@ -1,9 +1,9 @@
 # aerosar_msgs/msg/MissionStatus.msg
-# Drone mission status and connectivity report
+# Mission telemetry and connectivity status broadcast by Member 1 (Drone Sim) / Member 6
 
-string mission_id           # Unique mission identifier
-string state                  # "IDLE" | "SEARCHING" | "RETURNING" | "COMPLETE"
-float32 battery_percent        # Simulated remaining battery percentage (0-100)
-float32 coverage_percent       # Simulated search area coverage percentage (0-100)
-bool link_connected            # Connectivity status (true = online, false = offline)
-builtin_interfaces/Time stamp  # Status report timestamp
+string mission_id
+string state
+float32 battery_percent
+float32 coverage_percent
+bool link_connected
+builtin_interfaces/Time stamp

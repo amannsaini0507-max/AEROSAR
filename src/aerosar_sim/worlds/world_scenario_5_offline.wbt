@@ -1,0 +1,133 @@
+#VRML_SIM R2023b utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
+
+WorldInfo {
+  basicTimeStep 8
+  defaultDamping Damping {
+    linear 0.5
+    angular 0.5
+  }
+}
+
+Viewpoint {
+  orientation -0.5773502691896257 0.5773502691896257 0.5773502691896257 2.0944
+  position 0 0 16
+}
+
+TexturedBackground {
+}
+
+TexturedBackgroundLight {
+}
+
+RectangleArena {
+  floorSize 18 18
+  floorTileSize 2 2
+}
+
+# ==========================================================
+# Scenario 5 — Offline / Network Disconnection Sector
+# ==========================================================
+
+# 1. Natural Mountain / Deep Valley Gorge Obstacle
+Solid {
+  translation -4.0 0.0 1.2
+  name "obstacle_gorge_wall"
+  model "gorge_cliff"
+  children [
+    Shape {
+      appearance PBRAppearance { baseColor 0.35 0.32 0.28 roughness 0.95 }
+      geometry Box { size 2.0 12.0 2.4 }
+    }
+  ]
+  boundingObject Box { size 2.0 12.0 2.4 }
+}
+
+# 2. Debris Cluster
+Solid {
+  translation 3.0 2.5 0.4
+  name "hazard_debris"
+  model "debris"
+  children [
+    Shape {
+      appearance PBRAppearance { baseColor 0.45 0.4 0.35 }
+      geometry Box { size 2.5 2.5 0.8 }
+    }
+  ]
+  boundingObject Box { size 2.5 2.5 0.8 }
+}
+
+# 3. Isolated Survivor (Requires local offline queue logging)
+Solid {
+  translation 2.0 3.0 0.15
+  name "victim_offline_sync"
+  model "survivor"
+  description "survivor_victim_offline_sync"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.95 0.7 0.2
+        roughness 0.4
+      }
+      geometry Capsule {
+        radius 0.18
+        height 0.7
+      }
+    }
+  ]
+  boundingObject Capsule {
+    radius 0.18
+    height 0.7
+  }
+}
+
+# 4. Secondary Survivor
+Solid {
+  translation 1.0 -4.0 0.15
+  name "victim_offline_2"
+  model "survivor"
+  description "survivor_victim_offline_2"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.9 0.8 0.15
+        roughness 0.4
+      }
+      geometry Capsule {
+        radius 0.18
+        height 0.7
+      }
+    }
+  ]
+  boundingObject Capsule {
+    radius 0.18
+    height 0.7
+  }
+}
+
+# 5. Drone Starting Location
+Mavic2Pro {
+  translation -1.0 -1.0 0.15
+  rotation 0 0 1 0
+  name "Mavic 2 PRO"
+  controller "<extern>"
+  cameraSlot [
+    Camera {
+      name "camera"
+      width 400
+      height 240
+    }
+    Camera {
+      name "thermal_camera"
+      width 400
+      height 240
+    }
+    Accelerometer {
+      name "accelerometer"
+    }
+  ]
+}

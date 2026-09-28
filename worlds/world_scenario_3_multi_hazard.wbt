@@ -1,0 +1,181 @@
+#VRML_SIM R2023b utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
+
+WorldInfo {
+  basicTimeStep 8
+  defaultDamping Damping {
+    linear 0.5
+    angular 0.5
+  }
+}
+
+Viewpoint {
+  orientation -0.5773502691896257 0.5773502691896257 0.5773502691896257 2.0944
+  position 0 -5 18
+}
+
+TexturedBackground {
+}
+
+TexturedBackgroundLight {
+}
+
+RectangleArena {
+  floorSize 20 20
+  floorTileSize 2 2
+}
+
+# ==========================================================
+# Scenario 3 — Multi-Hazard Cluster
+# ==========================================================
+
+# 1. Fire Hazard
+Solid {
+  translation 3.5 3.5 0.3
+  name "hazard_fire"
+  model "fire"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 0.2 0
+        emissiveColor 1 0.45 0
+      }
+      geometry Box { size 0.8 0.8 0.6 }
+    }
+  ]
+  boundingObject Box { size 0.8 0.8 0.6 }
+}
+
+# 2. Smoke Hazard
+Solid {
+  translation 3.8 3.8 1.1
+  name "hazard_smoke"
+  model "smoke"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.6 0.6 0.6
+        transparency 0.55
+      }
+      geometry Sphere { radius 0.65 }
+    }
+  ]
+}
+
+# 3. Flood Water Margin
+Solid {
+  translation -4.0 -4.0 0.02
+  name "hazard_flood"
+  model "flood"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.05 0.35 0.85
+        transparency 0.25
+        metalness 0.7
+      }
+      geometry Box { size 6.0 6.0 0.04 }
+    }
+  ]
+}
+
+# 4. Collapsed Building Structure & Rubble
+Solid {
+  translation -3.0 3.0 0.8
+  rotation 0.7071 0.7071 0 0.4
+  name "hazard_damaged_structure"
+  model "collapsed_building"
+  children [
+    Shape {
+      appearance PBRAppearance { baseColor 0.5 0.48 0.45 roughness 0.9 }
+      geometry Box { size 3.5 2.5 0.3 }
+    }
+  ]
+  boundingObject Box { size 3.5 2.5 0.3 }
+}
+
+# 5. Heavy Debris Pile
+Solid {
+  translation -1.5 2.0 0.3
+  name "hazard_debris"
+  model "debris"
+  children [
+    Shape {
+      appearance PBRAppearance { baseColor 0.35 0.32 0.3 }
+      geometry Box { size 2.0 2.0 0.6 }
+    }
+  ]
+  boundingObject Box { size 2.0 2.0 0.6 }
+}
+
+# 6. Survivor 1: Near fire
+Solid {
+  translation 2.5 2.8 0.15
+  name "victim_multi_1"
+  model "survivor"
+  description "survivor_victim_multi_1_fire"
+  children [
+    Shape {
+      appearance PBRAppearance { baseColor 0.98 0.7 0.2 }
+      geometry Capsule { radius 0.18 height 0.7 }
+    }
+  ]
+  boundingObject Capsule { radius 0.18 height 0.7 }
+}
+
+# 7. Survivor 2: Trapped under slab
+Solid {
+  translation -2.5 3.5 0.15
+  name "victim_multi_2"
+  model "survivor"
+  description "survivor_victim_multi_2_trapped"
+  children [
+    Shape {
+      appearance PBRAppearance { baseColor 0.85 0.4 0.1 }
+      geometry Capsule { radius 0.18 height 0.7 }
+    }
+  ]
+  boundingObject Capsule { radius 0.18 height 0.7 }
+}
+
+# 8. Survivor 3: Near flood boundary
+Solid {
+  translation -1.0 -3.0 0.15
+  name "victim_multi_3"
+  model "survivor"
+  description "survivor_victim_multi_3_flood"
+  children [
+    Shape {
+      appearance PBRAppearance { baseColor 0.95 0.85 0.2 }
+      geometry Capsule { radius 0.18 height 0.7 }
+    }
+  ]
+  boundingObject Capsule { radius 0.18 height 0.7 }
+}
+
+# 9. Drone
+Mavic2Pro {
+  translation 0 0 0.15
+  rotation 0 0 1 0
+  name "Mavic 2 PRO"
+  controller "<extern>"
+  cameraSlot [
+    Camera {
+      name "camera"
+      width 400
+      height 240
+    }
+    Camera {
+      name "thermal_camera"
+      width 400
+      height 240
+    }
+    Accelerometer {
+      name "accelerometer"
+    }
+  ]
+}
