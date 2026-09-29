@@ -12,6 +12,8 @@ __pycache__/
 
 # Webots
 *.wbt.bak
+*.wbproj
+.*.wbproj
 
 # Node / frontend
 node_modules/
