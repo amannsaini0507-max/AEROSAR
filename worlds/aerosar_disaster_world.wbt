@@ -1,8 +1,13 @@
 #VRML_SIM R2023b utf8
 
+# ==============================================================================
+# PROJECT AEROSAR (SIH 2026, PS 26177)
+# Autonomous Search & Rescue (SAR) Disaster Site Simulation World
+# ==============================================================================
+
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/humans/pedestrian/protos/Pedestrian.proto"
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
 
 WorldInfo {
@@ -15,142 +20,797 @@ WorldInfo {
 
 Viewpoint {
   orientation -0.5773502691896257 0.5773502691896257 0.5773502691896257 2.0944
-  position 0 -6 16
+  position 0 -11 17
+  near 0.1
+  far 500
 }
 
 TexturedBackground {
+  texture "noon_cloudy_countryside"
 }
 
 TexturedBackgroundLight {
+  texture "noon_cloudy_countryside"
+  luminosity 1.25
+  castShadows TRUE
 }
 
-RectangleArena {
-  floorSize 24 24
-  floorTileSize 2 2
+DirectionalLight {
+  ambientIntensity 0.35
+  color 1.0 0.96 0.90
+  direction -0.45 -0.65 -0.62
+  intensity 2.4
+  castShadows TRUE
 }
 
-# ==============================================================================
-# DISASTER TERRAIN & OBSTACLE ZONES
-# ==============================================================================
-
-# Obstacle Zone A: Collapsed Structure Block 1
+# 30m x 30m Uneven Disaster Elevation Grid
 Solid {
-  translation 5.0 4.0 1.0
-  rotation 0 0 1 0.35
-  name "obstacle_collapsed_slab_1"
-  model "collapsed_concrete_slab"
+  translation -15 -15 0
+  name "disaster_elevation_terrain"
   children [
     Shape {
       appearance PBRAppearance {
-        baseColor 0.45 0.45 0.43
-        roughness 0.95
+        baseColor 0.42 0.36 0.28
+        roughness 0.94
+        metalness 0.05
+      }
+      geometry ElevationGrid {
+        xDimension 31
+        xSpacing 1.0
+        yDimension 31
+        ySpacing 1.0
+        height [ -0.033 -0.023 -0.007 0.010 0.024 0.033 0.034 0.026 0.012 -0.005 -0.021 -0.032 -0.035 -0.029 -0.017 0.000 0.017 0.029 0.035 0.032 0.021 0.005 -0.012 -0.026 -0.034 -0.033 -0.024 -0.010 0.007 0.023 0.033 -0.071 -0.050 -0.016 0.021 0.053 0.072 0.074 0.057 0.026 -0.011 -0.045 -0.069 -0.075 -0.063 -0.036 0.000 0.036 0.063 0.075 0.069 0.045 0.011 -0.026 -0.057 -0.074 -0.072 -0.053 -0.021 0.016 0.050 0.071 -0.092 -0.064 -0.021 0.027 0.069 0.094 0.095 0.074 0.034 -0.014 -0.058 -0.089 -0.097 -0.082 -0.047 0.000 0.047 0.082 0.097 0.089 0.058 0.014 -0.034 -0.074 -0.095 -0.094 -0.069 -0.027 0.021 0.064 0.092 -0.090 -0.063 -0.021 0.027 0.068 0.092 0.094 0.073 0.034 -0.014 -0.057 -0.087 -0.096 -0.081 -0.046 0.000 0.046 0.081 0.096 0.087 0.057 0.014 -0.034 -0.073 -0.094 -0.092 -0.068 -0.027 0.021 0.063 0.090 -0.066 -0.047 -0.015 0.020 0.050 0.068 0.069 0.054 0.025 -0.010 -0.042 -0.064 -0.071 -0.060 -0.034 0.000 0.034 0.060 0.071 0.064 0.042 0.010 -0.025 -0.054 -0.069 -0.068 -0.050 -0.020 0.015 0.047 0.066 -0.027 -0.019 -0.006 0.008 0.020 0.027 0.028 0.021 0.010 -0.004 -0.017 -0.026 -0.028 -0.024 -0.014 0.000 0.014 0.024 0.028 0.026 0.017 0.004 -0.010 -0.021 -0.028 -0.027 -0.020 -0.008 0.006 0.019 0.027 0.020 0.014 0.005 -0.006 -0.015 -0.020 -0.021 -0.016 -0.007 0.003 0.013 0.019 0.021 0.018 0.010 -0.000 -0.010 -0.018 -0.021 -0.019 -0.013 -0.003 0.007 0.016 0.021 0.020 0.015 0.006 -0.005 -0.014 -0.020 0.061 0.043 0.014 -0.018 -0.046 -0.063 -0.064 -0.049 -0.023 0.009 0.039 0.059 0.065 0.055 0.031 -0.000 -0.031 -0.055 -0.065 -0.059 -0.039 -0.009 0.023 0.049 0.064 0.063 0.046 0.018 -0.014 -0.043 -0.061 0.088 0.062 0.020 -0.026 -0.066 -0.090 -0.092 -0.071 -0.302 -0.304 -0.326 -0.341 -0.329 -0.306 -0.301 -0.000 -0.045 -0.079 -0.093 -0.085 -0.056 -0.013 0.033 0.071 0.092 0.090 0.066 0.026 -0.020 -0.062 -0.088 0.093 0.065 0.021 -0.028 -0.070 -0.095 -0.097 -0.075 -0.341 -0.339 -0.313 -0.296 -0.309 -0.336 -0.343 -0.000 -0.047 0.375 0.355 0.273 0.165 0.083 0.035 0.075 0.097 0.095 0.070 0.028 -0.021 -0.065 -0.093 0.075 0.053 0.017 -0.022 -0.057 -0.077 -0.078 -0.061 -0.353 -0.350 -0.309 -0.282 -0.303 -0.346 -0.356 -0.000 -0.038 0.282 0.275 0.241 0.198 0.165 0.028 0.061 0.078 0.077 0.057 0.022 -0.017 -0.053 -0.075 0.039 0.027 0.009 -0.012 -0.029 -0.040 -0.041 -0.031 -0.323 -0.323 -0.319 -0.317 -0.318 -0.322 -0.323 -0.000 -0.020 0.161 0.168 0.200 0.241 0.273 0.015 0.031 0.041 0.040 0.029 0.012 -0.009 -0.027 -0.039 -0.007 -0.005 -0.002 0.002 0.005 0.007 0.007 0.005 -0.289 -0.292 -0.330 -0.356 -0.336 -0.296 -0.287 0.000 0.003 0.067 0.086 0.168 0.275 0.355 -0.002 -0.005 -0.007 -0.007 -0.005 -0.002 0.002 0.005 0.007 -0.051 -0.035 -0.012 0.015 0.038 0.052 0.053 0.041 -0.295 -0.297 -0.328 -0.349 -0.333 -0.300 0.000 0.000 0.000 0.045 0.067 0.161 0.282 0.375 -0.019 -0.041 -0.053 -0.052 -0.038 -0.015 0.012 0.035 0.051 -0.082 -0.058 -0.019 0.025 0.062 0.084 0.086 0.066 -0.332 -0.332 -0.316 -0.306 -0.314 0.000 0.000 0.000 0.000 0.000 0.088 0.080 0.053 0.012 -0.031 -0.066 -0.086 -0.084 -0.062 -0.025 0.019 0.058 0.082 -0.094 -0.066 -0.022 0.028 0.071 0.096 0.098 0.076 0.035 -0.014 -0.060 -0.091 -0.100 0.000 0.000 0.000 0.000 0.000 0.100 0.091 0.060 0.014 -0.035 -0.076 -0.098 -0.096 -0.071 -0.028 0.022 0.066 0.094 -0.082 -0.058 -0.019 0.025 0.062 0.084 0.086 0.066 0.358 0.413 0.377 0.272 0.162 0.000 0.000 0.000 0.000 0.000 -0.054 -0.090 -0.098 -0.071 -0.031 -0.066 -0.086 -0.084 -0.062 -0.025 0.019 0.058 0.082 -0.051 -0.035 -0.012 0.015 0.038 0.052 0.053 0.041 0.271 0.326 0.290 0.185 0.075 0.027 0.000 0.000 0.000 -0.024 -0.054 -0.090 -0.098 -0.071 -0.019 -0.041 -0.053 -0.052 -0.038 -0.015 0.012 0.035 0.051 -0.007 -0.005 -0.002 0.002 0.005 0.007 0.007 0.005 0.186 0.241 0.205 0.100 -0.010 -0.058 -0.016 0.000 -0.026 -0.024 -0.054 -0.090 -0.098 -0.071 -0.002 -0.005 -0.007 -0.007 -0.005 -0.002 0.002 0.005 0.007 0.039 0.027 0.009 -0.012 -0.029 -0.040 -0.041 -0.031 0.155 0.210 0.174 0.069 -0.041 -0.090 -0.047 -0.000 -0.026 -0.024 -0.054 -0.090 -0.098 -0.071 0.015 0.031 0.041 0.040 0.029 0.012 -0.009 -0.027 -0.039 0.075 0.053 0.017 -0.022 -0.057 -0.077 -0.078 -0.061 0.196 0.251 0.215 0.110 0.000 -0.048 -0.006 -0.000 -0.026 -0.024 -0.054 -0.090 -0.098 -0.071 0.028 0.061 0.078 0.077 0.057 0.022 -0.017 -0.053 -0.075 0.093 0.065 0.021 -0.028 -0.070 -0.095 -0.097 -0.075 0.285 0.340 0.304 0.199 0.089 0.041 0.083 -0.000 -0.026 -0.024 -0.054 -0.090 -0.098 -0.071 0.035 0.075 0.097 0.095 0.070 0.028 -0.021 -0.065 -0.093 0.088 0.062 0.020 -0.026 -0.066 -0.090 -0.092 -0.071 0.368 0.422 0.387 0.282 0.172 0.123 0.165 -0.000 -0.045 -0.079 -0.093 -0.085 -0.056 -0.013 0.033 0.071 0.092 0.090 0.066 0.026 -0.020 -0.062 -0.088 0.061 0.043 0.014 -0.018 -0.046 -0.063 -0.064 -0.049 -0.023 0.009 0.039 0.059 0.065 0.055 0.031 -0.000 -0.031 -0.055 -0.065 -0.059 -0.039 -0.009 0.023 0.049 0.064 0.063 0.046 0.018 -0.014 -0.043 -0.061 0.020 0.014 0.005 -0.006 -0.015 -0.020 -0.021 -0.016 -0.007 0.003 0.013 0.019 0.021 0.018 0.010 -0.000 -0.010 -0.018 -0.021 -0.019 -0.013 -0.003 0.007 0.016 0.021 0.020 0.015 0.006 -0.005 -0.014 -0.020 -0.027 -0.019 -0.006 0.008 0.020 0.027 0.028 0.021 0.010 -0.004 -0.017 -0.026 -0.028 -0.024 -0.014 0.000 0.014 0.024 0.028 0.026 0.017 0.004 -0.010 -0.021 -0.028 -0.027 -0.020 -0.008 0.006 0.019 0.027 -0.066 -0.047 -0.015 0.020 0.050 0.068 0.069 0.054 0.025 -0.010 -0.042 -0.064 -0.071 -0.060 -0.034 0.000 0.034 0.060 0.071 0.064 0.042 0.010 -0.025 -0.054 -0.069 -0.068 -0.050 -0.020 0.015 0.047 0.066 -0.090 -0.063 -0.021 0.027 0.068 0.092 0.094 0.073 0.034 -0.014 -0.057 -0.087 -0.096 -0.081 -0.046 0.000 0.046 0.081 0.096 0.087 0.057 0.014 -0.034 -0.073 -0.094 -0.092 -0.068 -0.027 0.021 0.063 0.090 -0.092 -0.064 -0.021 0.027 0.069 0.094 0.095 0.074 0.034 -0.014 -0.058 -0.089 -0.097 -0.082 -0.047 0.000 0.047 0.082 0.097 0.089 0.058 0.014 -0.034 -0.074 -0.095 -0.094 -0.069 -0.027 0.021 0.064 0.092 -0.071 -0.050 -0.016 0.021 0.053 0.072 0.074 0.057 0.026 -0.011 -0.045 -0.069 -0.075 -0.063 -0.036 0.000 0.036 0.063 0.075 0.069 0.045 0.011 -0.026 -0.057 -0.074 -0.072 -0.053 -0.021 0.016 0.050 0.071 -0.033 -0.023 -0.007 0.010 0.024 0.033 0.034 0.026 0.012 -0.005 -0.021 -0.032 -0.035 -0.029 -0.017 0.000 0.017 0.029 0.035 0.032 0.021 0.005 -0.012 -0.026 -0.034 -0.033 -0.024 -0.010 0.007 0.023 0.033 ]
+      }
+    }
+  ]
+  boundingObject ElevationGrid {
+    xDimension 31
+    xSpacing 1.0
+    yDimension 31
+    ySpacing 1.0
+    height [ -0.033 -0.023 -0.007 0.010 0.024 0.033 0.034 0.026 0.012 -0.005 -0.021 -0.032 -0.035 -0.029 -0.017 0.000 0.017 0.029 0.035 0.032 0.021 0.005 -0.012 -0.026 -0.034 -0.033 -0.024 -0.010 0.007 0.023 0.033 -0.071 -0.050 -0.016 0.021 0.053 0.072 0.074 0.057 0.026 -0.011 -0.045 -0.069 -0.075 -0.063 -0.036 0.000 0.036 0.063 0.075 0.069 0.045 0.011 -0.026 -0.057 -0.074 -0.072 -0.053 -0.021 0.016 0.050 0.071 -0.092 -0.064 -0.021 0.027 0.069 0.094 0.095 0.074 0.034 -0.014 -0.058 -0.089 -0.097 -0.082 -0.047 0.000 0.047 0.082 0.097 0.089 0.058 0.014 -0.034 -0.074 -0.095 -0.094 -0.069 -0.027 0.021 0.064 0.092 -0.090 -0.063 -0.021 0.027 0.068 0.092 0.094 0.073 0.034 -0.014 -0.057 -0.087 -0.096 -0.081 -0.046 0.000 0.046 0.081 0.096 0.087 0.057 0.014 -0.034 -0.073 -0.094 -0.092 -0.068 -0.027 0.021 0.063 0.090 -0.066 -0.047 -0.015 0.020 0.050 0.068 0.069 0.054 0.025 -0.010 -0.042 -0.064 -0.071 -0.060 -0.034 0.000 0.034 0.060 0.071 0.064 0.042 0.010 -0.025 -0.054 -0.069 -0.068 -0.050 -0.020 0.015 0.047 0.066 -0.027 -0.019 -0.006 0.008 0.020 0.027 0.028 0.021 0.010 -0.004 -0.017 -0.026 -0.028 -0.024 -0.014 0.000 0.014 0.024 0.028 0.026 0.017 0.004 -0.010 -0.021 -0.028 -0.027 -0.020 -0.008 0.006 0.019 0.027 0.020 0.014 0.005 -0.006 -0.015 -0.020 -0.021 -0.016 -0.007 0.003 0.013 0.019 0.021 0.018 0.010 -0.000 -0.010 -0.018 -0.021 -0.019 -0.013 -0.003 0.007 0.016 0.021 0.020 0.015 0.006 -0.005 -0.014 -0.020 0.061 0.043 0.014 -0.018 -0.046 -0.063 -0.064 -0.049 -0.023 0.009 0.039 0.059 0.065 0.055 0.031 -0.000 -0.031 -0.055 -0.065 -0.059 -0.039 -0.009 0.023 0.049 0.064 0.063 0.046 0.018 -0.014 -0.043 -0.061 0.088 0.062 0.020 -0.026 -0.066 -0.090 -0.092 -0.071 -0.302 -0.304 -0.326 -0.341 -0.329 -0.306 -0.301 -0.000 -0.045 -0.079 -0.093 -0.085 -0.056 -0.013 0.033 0.071 0.092 0.090 0.066 0.026 -0.020 -0.062 -0.088 0.093 0.065 0.021 -0.028 -0.070 -0.095 -0.097 -0.075 -0.341 -0.339 -0.313 -0.296 -0.309 -0.336 -0.343 -0.000 -0.047 0.375 0.355 0.273 0.165 0.083 0.035 0.075 0.097 0.095 0.070 0.028 -0.021 -0.065 -0.093 0.075 0.053 0.017 -0.022 -0.057 -0.077 -0.078 -0.061 -0.353 -0.350 -0.309 -0.282 -0.303 -0.346 -0.356 -0.000 -0.038 0.282 0.275 0.241 0.198 0.165 0.028 0.061 0.078 0.077 0.057 0.022 -0.017 -0.053 -0.075 0.039 0.027 0.009 -0.012 -0.029 -0.040 -0.041 -0.031 -0.323 -0.323 -0.319 -0.317 -0.318 -0.322 -0.323 -0.000 -0.020 0.161 0.168 0.200 0.241 0.273 0.015 0.031 0.041 0.040 0.029 0.012 -0.009 -0.027 -0.039 -0.007 -0.005 -0.002 0.002 0.005 0.007 0.007 0.005 -0.289 -0.292 -0.330 -0.356 -0.336 -0.296 -0.287 0.000 0.003 0.067 0.086 0.168 0.275 0.355 -0.002 -0.005 -0.007 -0.007 -0.005 -0.002 0.002 0.005 0.007 -0.051 -0.035 -0.012 0.015 0.038 0.052 0.053 0.041 -0.295 -0.297 -0.328 -0.349 -0.333 -0.300 0.000 0.000 0.000 0.045 0.067 0.161 0.282 0.375 -0.019 -0.041 -0.053 -0.052 -0.038 -0.015 0.012 0.035 0.051 -0.082 -0.058 -0.019 0.025 0.062 0.084 0.086 0.066 -0.332 -0.332 -0.316 -0.306 -0.314 0.000 0.000 0.000 0.000 0.000 0.088 0.080 0.053 0.012 -0.031 -0.066 -0.086 -0.084 -0.062 -0.025 0.019 0.058 0.082 -0.094 -0.066 -0.022 0.028 0.071 0.096 0.098 0.076 0.035 -0.014 -0.060 -0.091 -0.100 0.000 0.000 0.000 0.000 0.000 0.100 0.091 0.060 0.014 -0.035 -0.076 -0.098 -0.096 -0.071 -0.028 0.022 0.066 0.094 -0.082 -0.058 -0.019 0.025 0.062 0.084 0.086 0.066 0.358 0.413 0.377 0.272 0.162 0.000 0.000 0.000 0.000 0.000 -0.054 -0.090 -0.098 -0.071 -0.031 -0.066 -0.086 -0.084 -0.062 -0.025 0.019 0.058 0.082 -0.051 -0.035 -0.012 0.015 0.038 0.052 0.053 0.041 0.271 0.326 0.290 0.185 0.075 0.027 0.000 0.000 0.000 -0.024 -0.054 -0.090 -0.098 -0.071 -0.019 -0.041 -0.053 -0.052 -0.038 -0.015 0.012 0.035 0.051 -0.007 -0.005 -0.002 0.002 0.005 0.007 0.007 0.005 0.186 0.241 0.205 0.100 -0.010 -0.058 -0.016 0.000 -0.026 -0.024 -0.054 -0.090 -0.098 -0.071 -0.002 -0.005 -0.007 -0.007 -0.005 -0.002 0.002 0.005 0.007 0.039 0.027 0.009 -0.012 -0.029 -0.040 -0.041 -0.031 0.155 0.210 0.174 0.069 -0.041 -0.090 -0.047 -0.000 -0.026 -0.024 -0.054 -0.090 -0.098 -0.071 0.015 0.031 0.041 0.040 0.029 0.012 -0.009 -0.027 -0.039 0.075 0.053 0.017 -0.022 -0.057 -0.077 -0.078 -0.061 0.196 0.251 0.215 0.110 0.000 -0.048 -0.006 -0.000 -0.026 -0.024 -0.054 -0.090 -0.098 -0.071 0.028 0.061 0.078 0.077 0.057 0.022 -0.017 -0.053 -0.075 0.093 0.065 0.021 -0.028 -0.070 -0.095 -0.097 -0.075 0.285 0.340 0.304 0.199 0.089 0.041 0.083 -0.000 -0.026 -0.024 -0.054 -0.090 -0.098 -0.071 0.035 0.075 0.097 0.095 0.070 0.028 -0.021 -0.065 -0.093 0.088 0.062 0.020 -0.026 -0.066 -0.090 -0.092 -0.071 0.368 0.422 0.387 0.282 0.172 0.123 0.165 -0.000 -0.045 -0.079 -0.093 -0.085 -0.056 -0.013 0.033 0.071 0.092 0.090 0.066 0.026 -0.020 -0.062 -0.088 0.061 0.043 0.014 -0.018 -0.046 -0.063 -0.064 -0.049 -0.023 0.009 0.039 0.059 0.065 0.055 0.031 -0.000 -0.031 -0.055 -0.065 -0.059 -0.039 -0.009 0.023 0.049 0.064 0.063 0.046 0.018 -0.014 -0.043 -0.061 0.020 0.014 0.005 -0.006 -0.015 -0.020 -0.021 -0.016 -0.007 0.003 0.013 0.019 0.021 0.018 0.010 -0.000 -0.010 -0.018 -0.021 -0.019 -0.013 -0.003 0.007 0.016 0.021 0.020 0.015 0.006 -0.005 -0.014 -0.020 -0.027 -0.019 -0.006 0.008 0.020 0.027 0.028 0.021 0.010 -0.004 -0.017 -0.026 -0.028 -0.024 -0.014 0.000 0.014 0.024 0.028 0.026 0.017 0.004 -0.010 -0.021 -0.028 -0.027 -0.020 -0.008 0.006 0.019 0.027 -0.066 -0.047 -0.015 0.020 0.050 0.068 0.069 0.054 0.025 -0.010 -0.042 -0.064 -0.071 -0.060 -0.034 0.000 0.034 0.060 0.071 0.064 0.042 0.010 -0.025 -0.054 -0.069 -0.068 -0.050 -0.020 0.015 0.047 0.066 -0.090 -0.063 -0.021 0.027 0.068 0.092 0.094 0.073 0.034 -0.014 -0.057 -0.087 -0.096 -0.081 -0.046 0.000 0.046 0.081 0.096 0.087 0.057 0.014 -0.034 -0.073 -0.094 -0.092 -0.068 -0.027 0.021 0.063 0.090 -0.092 -0.064 -0.021 0.027 0.069 0.094 0.095 0.074 0.034 -0.014 -0.058 -0.089 -0.097 -0.082 -0.047 0.000 0.047 0.082 0.097 0.089 0.058 0.014 -0.034 -0.074 -0.095 -0.094 -0.069 -0.027 0.021 0.064 0.092 -0.071 -0.050 -0.016 0.021 0.053 0.072 0.074 0.057 0.026 -0.011 -0.045 -0.069 -0.075 -0.063 -0.036 0.000 0.036 0.063 0.075 0.069 0.045 0.011 -0.026 -0.057 -0.074 -0.072 -0.053 -0.021 0.016 0.050 0.071 -0.033 -0.023 -0.007 0.010 0.024 0.033 0.034 0.026 0.012 -0.005 -0.021 -0.032 -0.035 -0.029 -0.017 0.000 0.017 0.029 0.035 0.032 0.021 0.005 -0.012 -0.026 -0.034 -0.033 -0.024 -0.010 0.007 0.023 0.033 ]
+  }
+}
+
+# Drone Staging Area / Tactical Helipad Base (3.2m x 3.2m)
+Solid {
+  translation 0 0 0.005
+  name "drone_staging_helipad"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.22 0.22 0.24
+        roughness 0.8
         metalness 0.1
       }
       geometry Box {
-        size 3.5 2.5 2.0
+        size 3.2 3.2 0.01
       }
+    }
+    Transform {
+      translation 0 0 0.007
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.96 0.82 0.08
+            roughness 0.35
+          }
+          geometry Box {
+            size 3.1 3.1 0.005
+          }
+        }
+      ]
+    }
+    Transform {
+      translation 0 0 0.009
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.14 0.15 0.17
+            roughness 0.85
+          }
+          geometry Box {
+            size 2.7 2.7 0.005
+          }
+        }
+      ]
+    }
+    Transform {
+      translation 0 0 0.012
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 1 1 1
+            roughness 0.3
+          }
+          geometry Box {
+            size 0.35 1.6 0.005
+          }
+        }
+      ]
+    }
+    Transform {
+      translation 0 0 0.012
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 1 1 1
+            roughness 0.3
+          }
+          geometry Box {
+            size 1.6 0.35 0.005
+          }
+        }
+      ]
     }
   ]
   boundingObject Box {
-    size 3.5 2.5 2.0
+    size 3.2 3.2 0.01
   }
 }
 
-# Obstacle Zone A: Collapsed Structure Block 2
+# Perimeter Containment Walls (30m x 30m Arena Boundary)
 Solid {
-  translation 6.2 2.0 0.6
-  rotation 0 0 1 -0.2
-  name "obstacle_rubble_pile_2"
-  model "rubble_pile"
+  translation 0 15 0.6
+  name "perimeter_wall_north"
   children [
     Shape {
       appearance PBRAppearance {
-        baseColor 0.40 0.38 0.35
-        roughness 0.98
+        baseColor 0.48 0.46 0.44
+        roughness 0.92
       }
       geometry Box {
-        size 2.5 2.0 1.2
+        size 30.2 0.3 1.2
       }
     }
   ]
   boundingObject Box {
-    size 2.5 2.0 1.2
+    size 30.2 0.3 1.2
   }
 }
 
-# Obstacle Zone B: Concrete Wall Barrier (Damaged structure)
 Solid {
-  translation -4.0 2.5 1.2
-  rotation 0 0 1 0
-  name "obstacle_ruined_wall"
-  model "damaged_wall"
+  translation 0 -15 0.6
+  name "perimeter_wall_south"
   children [
     Shape {
       appearance PBRAppearance {
-        baseColor 0.52 0.50 0.48
+        baseColor 0.48 0.46 0.44
+        roughness 0.92
+      }
+      geometry Box {
+        size 30.2 0.3 1.2
+      }
+    }
+  ]
+  boundingObject Box {
+    size 30.2 0.3 1.2
+  }
+}
+
+Solid {
+  translation 15 0 0.6
+  name "perimeter_wall_east"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.48 0.46 0.44
+        roughness 0.92
+      }
+      geometry Box {
+        size 0.3 30.2 1.2
+      }
+    }
+  ]
+  boundingObject Box {
+    size 0.3 30.2 1.2
+  }
+}
+
+Solid {
+  translation -15 0 0.6
+  name "perimeter_wall_west"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.48 0.46 0.44
+        roughness 0.92
+      }
+      geometry Box {
+        size 0.3 30.2 1.2
+      }
+    }
+  ]
+  boundingObject Box {
+    size 0.3 30.2 1.2
+  }
+}
+
+# ==============================================================================
+# ZONE A: COLLAPSED STRUCTURE SECTOR & GPS-DENIED TESTING ZONE (North-West)
+# ==============================================================================
+
+# Ruined Factory Wall 1
+Solid {
+  translation -7.0 6.5 1.5
+  name "ruined_factory_facade"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.50 0.48 0.46
         roughness 0.9
       }
       geometry Box {
-        size 0.5 5.0 2.4
+        size 0.4 6.0 3.0
       }
     }
   ]
   boundingObject Box {
-    size 0.5 5.0 2.4
+    size 0.4 6.0 3.0
   }
 }
 
-# Obstacle Zone C: Debris Mound & Obstacle Cluster
+# Obstacle Zone D: Covered Structure (GPS-Denied Structural Tunnel & Overhead Slab)
+# Matches drone_driver.py volume: x: [-4.5, -1.2], y: [0.8, 4.0], z: [0.0, 6.0]
 Solid {
-  translation 3.0 -4.5 0.5
-  rotation 0 0 1 0.78
-  name "hazard_debris"
-  model "debris"
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0.35 0.32 0.30
-        roughness 0.95
-      }
-      geometry Box {
-        size 2.8 2.8 1.0
-      }
-    }
-  ]
-  boundingObject Box {
-    size 2.8 2.8 1.0
-  }
-}
-
-# Obstacle Zone D: Covered Structure (GPS-Denied Tunnel/Roof)
-Solid {
-  translation -3.0 4.0 2.2
-  rotation 0 0 1 0
+  translation -3.0 3.8 2.2
   name "obstacle_covered_structure"
   model "covered_tunnel"
   children [
     Shape {
       appearance PBRAppearance {
-        baseColor 0.3 0.3 0.32
+        baseColor 0.46 0.44 0.42
+        roughness 0.92
+      }
+      geometry Box {
+        size 3.6 3.6 0.22
+      }
+    }
+    Transform {
+      translation 0 0 0.12
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.58 0.56 0.52
+            roughness 0.65
+            metalness 0.75
+          }
+          geometry Box {
+            size 3.5 3.5 0.02
+          }
+        }
+      ]
+    }
+    # Pillar 1
+    Transform {
+      translation -1.5 -1.5 -1.1
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.45 0.43 0.40
+            roughness 0.95
+          }
+          geometry Cylinder {
+            radius 0.16
+            height 2.2
+          }
+        }
+      ]
+    }
+    # Pillar 2
+    Transform {
+      translation -1.5 1.5 -1.1
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.45 0.43 0.40
+            roughness 0.95
+          }
+          geometry Cylinder {
+            radius 0.16
+            height 2.2
+          }
+        }
+      ]
+    }
+    # Pillar 3
+    Transform {
+      translation 1.5 1.5 -1.1
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.45 0.43 0.40
+            roughness 0.95
+          }
+          geometry Cylinder {
+            radius 0.16
+            height 2.2
+          }
+        }
+      ]
+    }
+    # Buckled Rusted Steel I-Beam
+    Transform {
+      translation 0.2 0 -0.15
+      rotation 0 0 1 0.45
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.42 0.24 0.16
+            roughness 0.8
+            metalness 0.85
+          }
+          geometry Box {
+            size 0.18 3.8 0.12
+          }
+        }
+      ]
+    }
+  ]
+  boundingObject Group {
+    children [
+      Transform {
+        translation 0 0 0
+        children [
+          Box {
+            size 3.6 3.6 0.22
+          }
+        ]
+      }
+      Transform {
+        translation -1.5 -1.5 -1.1
+        children [
+          Cylinder {
+            radius 0.16
+            height 2.2
+          }
+        ]
+      }
+      Transform {
+        translation -1.5 1.5 -1.1
+        children [
+          Cylinder {
+            radius 0.16
+            height 2.2
+          }
+        ]
+      }
+      Transform {
+        translation 1.5 1.5 -1.1
+        children [
+          Cylinder {
+            radius 0.16
+            height 2.2
+          }
+        ]
+      }
+    ]
+  }
+}
+
+# Obstacle Zone A: Collapsed Structure Block 1 (Tilted fractured concrete slab)
+Solid {
+  translation 5.0 4.0 1.0
+  rotation 0.25 0.85 0.15 0.52
+  name "obstacle_collapsed_slab_1"
+  model "collapsed_concrete_slab"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.48 0.47 0.45
+        roughness 0.94
+      }
+      geometry Box {
+        size 3.8 2.6 0.35
+      }
+    }
+    Transform {
+      translation 1.8 0 0
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.45 0.25 0.15
+            roughness 0.85
+            metalness 0.8
+          }
+          geometry Box {
+            size 0.5 0.03 0.03
+          }
+        }
+      ]
+    }
+  ]
+  boundingObject Box {
+    size 3.8 2.6 0.35
+  }
+}
+
+# Obstacle Zone A: Collapsed Structure Block 2 (Rubble pile & shattered masonry)
+Solid {
+  translation 6.2 2.0 0.6
+  rotation 0 0 1 -0.25
+  name "obstacle_rubble_pile_2"
+  model "rubble_pile"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.55 0.28 0.22
+        roughness 0.95
+      }
+      geometry Box {
+        size 2.6 2.1 1.2
+      }
+    }
+    Transform {
+      translation 0.3 0.2 0.65
+      rotation 0.3 0.5 0.8 0.7
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.46 0.45 0.43
+            roughness 0.92
+          }
+          geometry Box {
+            size 1.2 0.9 0.4
+          }
+        }
+      ]
+    }
+  ]
+  boundingObject Box {
+    size 2.6 2.1 1.2
+  }
+}
+
+# Obstacle Zone B: Concrete Wall Barrier (Damaged structure with breaches)
+Solid {
+  translation -4.0 2.5 1.2
+  rotation 0 0 1 0.05
+  name "obstacle_ruined_wall"
+  model "damaged_wall"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.50 0.48 0.46
         roughness 0.9
       }
       geometry Box {
-        size 3.5 3.5 0.2
+        size 0.45 4.8 2.4
       }
     }
   ]
   boundingObject Box {
-    size 3.5 3.5 0.2
+    size 0.45 4.8 2.4
   }
 }
 
+# Strewn Industrial Pipe Infrastructure
+Solid {
+  translation -3.4 3.0 0.16
+  rotation 0 1 0 1.5708
+  name "industrial_pipe_1"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.25 0.55 0.75
+        roughness 0.45
+        metalness 0.65
+      }
+      geometry Cylinder {
+        radius 0.08
+        height 2.4
+      }
+    }
+  ]
+  boundingObject Cylinder {
+    radius 0.08
+    height 2.4
+  }
+}
+
+Solid {
+  translation -2.1 4.6 0.14
+  rotation 1 0 0 1.45
+  name "industrial_pipe_2"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.30 0.32 0.35
+        roughness 0.55
+        metalness 0.75
+      }
+      geometry Cylinder {
+        radius 0.06
+        height 1.8
+      }
+    }
+  ]
+  boundingObject Cylinder {
+    radius 0.06
+    height 1.8
+  }
+}
+
+# Generic CAD Mesh Loader Pattern (HGW002 Repository Architecture)
+Solid {
+  translation -3.6 4.9 0.45
+  rotation 0.4 0.6 0.3 0.8
+  name "fractured_mesh_wreckage"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.48 0.46 0.44
+        roughness 0.94
+      }
+      geometry IndexedFaceSet {
+        coord Coordinate {
+          point [
+            -0.8 -0.5 0.0,
+             0.9 -0.4 0.1,
+             0.7  0.7 0.0,
+            -0.6  0.6 0.2,
+            -0.5 -0.3 0.6,
+             0.6 -0.2 0.7,
+             0.5  0.5 0.5,
+            -0.4  0.4 0.8
+          ]
+        }
+        coordIndex [
+          0, 1, 2, 3, -1,
+          4, 7, 6, 5, -1,
+          0, 4, 5, 1, -1,
+          1, 5, 6, 2, -1,
+          2, 6, 7, 3, -1,
+          3, 7, 4, 0, -1
+        ]
+      }
+    }
+  ]
+  boundingObject Box {
+    size 1.5 1.2 0.8
+  }
+}
+
+# SURVIVOR 3: Trapped Under Collapsed Structure (Zone A)
+DEF victim_3 Pedestrian {
+  translation -2.5 3.8 0.25
+  rotation 1 0 0 1.5708
+  name "victim_3"
+  controller ""
+  shirtColor 0.98 0.22 0.15
+  pantsColor 0.20 0.24 0.38
+  shoesColor 0.12 0.12 0.12
+  skinColor 0.94 0.74 0.64
+  enableBoundingObject TRUE
+  bodySlot [
+    Transform {
+      translation 0 0 0.08
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.98 0.45 0.12
+            emissiveColor 0.85 0.35 0.08
+            roughness 0.35
+          }
+          geometry Box {
+            size 0.32 0.18 0.15
+          }
+        }
+      ]
+    }
+  ]
+}
+
 # ==============================================================================
-# DISASTER HAZARD PROXIES
+# ZONE B: FLOODED BASIN & WATER HAZARD SECTOR (South-West)
 # ==============================================================================
 
-# 1. Fire Hazard Proxy (Intense Thermal & RGB Signature)
+# Flood Water Plane (Strictly matches perception_node.py HSV range)
 Solid {
-  translation 2.5 2.5 0.3
+  translation -3.5 -3.5 0.02
+  rotation 0 0 1 0
+  name "hazard_flood"
+  model "flood"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.06 0.38 0.82
+        transparency 0.22
+        roughness 0.08
+        metalness 0.78
+      }
+      geometry Box {
+        size 7.5 7.5 0.04
+      }
+    }
+    Transform {
+      translation 0 0 -0.06
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.28 0.24 0.18
+            roughness 0.98
+          }
+          geometry Box {
+            size 7.4 7.4 0.04
+          }
+        }
+      ]
+    }
+  ]
+}
+
+# Flooded Basin Embankment Berms
+Solid {
+  translation -3.5 0.3 0.15
+  name "flood_berm_north"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.45 0.40 0.30
+        roughness 0.95
+      }
+      geometry Box {
+        size 7.6 0.45 0.3
+      }
+    }
+  ]
+  boundingObject Box {
+    size 7.6 0.45 0.3
+  }
+}
+
+Solid {
+  translation 0.3 -3.5 0.15
+  name "flood_berm_east"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.45 0.40 0.30
+        roughness 0.95
+      }
+      geometry Box {
+        size 0.45 7.6 0.3
+      }
+    }
+  ]
+  boundingObject Box {
+    size 0.45 7.6 0.3
+  }
+}
+
+# Floating Hazard Barrels (Warning Markers)
+Solid {
+  translation -4.3 -3.0 0.14
+  rotation 0.32 0.85 0.15 0.45
+  name "floating_barrel_1"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.85 0.65 0.05
+        roughness 0.4
+        metalness 0.8
+      }
+      geometry Cylinder {
+        radius 0.28
+        height 0.85
+      }
+    }
+  ]
+  boundingObject Cylinder {
+    radius 0.28
+    height 0.85
+  }
+}
+
+Solid {
+  translation -2.7 -4.6 0.10
+  rotation 0.75 0.15 0.25 0.55
+  name "floating_barrel_2"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.15 0.45 0.75
+        roughness 0.4
+        metalness 0.8
+      }
+      geometry Cylinder {
+        radius 0.28
+        height 0.85
+      }
+    }
+  ]
+  boundingObject Cylinder {
+    radius 0.28
+    height 0.85
+  }
+}
+
+# Submerged Concrete Slab
+Solid {
+  translation -3.8 -2.4 0.08
+  rotation 0.15 0.35 0.9 0.4
+  name "submerged_concrete_block"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.44 0.42 0.40
+        roughness 0.94
+      }
+      geometry Box {
+        size 2.0 1.2 0.35
+      }
+    }
+  ]
+  boundingObject Box {
+    size 2.0 1.2 0.35
+  }
+}
+
+# SURVIVOR 2: Stranded at Flood Shoreline Margin (Zone B)
+DEF victim_2 Pedestrian {
+  translation -0.8 -2.5 1.27
+  rotation 0 0 1 -0.8
+  name "victim_2"
+  controller ""
+  shirtColor 0.95 0.88 0.12
+  pantsColor 0.16 0.24 0.48
+  shoesColor 0.15 0.15 0.15
+  skinColor 0.94 0.74 0.64
+  enableBoundingObject TRUE
+  bodySlot [
+    Transform {
+      translation 0 0 0.05
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.98 0.90 0.10
+            emissiveColor 0.60 0.50 0.05
+            roughness 0.3
+          }
+          geometry Box {
+            size 0.34 0.2 0.18
+          }
+        }
+      ]
+    }
+  ]
+}
+
+# ==============================================================================
+# ZONE C: ACTIVE FIRE & SMOKE HAZARD ZONE (North-East)
+# ==============================================================================
+
+# High-Intensity Fiery Point Light Emitter (Intensity: 9.5)
+PointLight {
+  attenuation 0 0 1
+  color 1 0.25 0
+  intensity 9.5
+  location 2.5 2.5 0.65
+  castShadows TRUE
+}
+
+# Charred Ground Decal & Scorched Earth Ring
+Solid {
+  translation 2.5 2.5 0.008
+  name "charred_earth_surface"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.07 0.06 0.06
+        roughness 0.98
+      }
+      geometry Cylinder {
+        radius 2.2
+        height 0.008
+      }
+    }
+  ]
+}
+
+# Active Fire Hazard Core (Matches perception_node.py HSV range)
+Solid {
+  translation 2.5 2.5 0.35
   rotation 0 0 1 0
   name "hazard_fire"
   model "fire"
@@ -162,134 +822,287 @@ Solid {
         roughness 0.15
       }
       geometry Box {
-        size 0.8 0.8 0.6
+        size 0.95 0.95 0.65
       }
+    }
+    Transform {
+      translation 0 0 0.35
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 1 0.6 0.05
+            emissiveColor 1 0.7 0.1
+            roughness 0.1
+          }
+          geometry Cone {
+            bottomRadius 0.45
+            height 0.75
+          }
+        }
+      ]
     }
   ]
   boundingObject Box {
-    size 0.8 0.8 0.6
+    size 0.95 0.95 0.65
   }
 }
 
-# 2. Smoke Hazard Proxy (Atmospheric Occlusion)
+# Atmospheric Smoke Hazard Proxy
 Solid {
-  translation 2.7 2.7 1.1
+  translation 2.7 2.7 1.25
   rotation 0 0 1 0
   name "hazard_smoke"
   model "smoke"
   children [
     Shape {
       appearance PBRAppearance {
-        baseColor 0.58 0.58 0.58
-        transparency 0.55
+        baseColor 0.28 0.28 0.28
+        transparency 0.52
         roughness 0.95
+      }
+      geometry Sphere {
+        radius 0.75
+      }
+    }
+    Transform {
+      translation 0.35 0.4 0.55
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.32 0.32 0.32
+            transparency 0.65
+            roughness 0.95
+          }
+          geometry Sphere {
+            radius 0.6
+          }
+        }
+      ]
+    }
+  ]
+}
+
+# Clear Visual Hazard Warning Indicators
+Solid {
+  translation 1.3 3.8 0.5
+  rotation 0 0 1 0.8
+  name "fire_zone_caution_sign"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.95 0.82 0.08
+        roughness 0.3
+      }
+      geometry Box {
+        size 0.1 0.6 0.6
+      }
+    }
+    Transform {
+      translation 0 0 -0.5
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.5 0.5 0.5
+            metalness 0.8
+          }
+          geometry Cylinder {
+            radius 0.03
+            height 1.0
+          }
+        }
+      ]
+    }
+  ]
+}
+
+# Work Barrier with Hazard Stripes
+Solid {
+  translation 3.7 1.3 0.4
+  rotation 0 0 1 -0.6
+  name "fire_zone_barrier"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.95 0.45 0.05
+        roughness 0.4
+      }
+      geometry Box {
+        size 1.8 0.15 0.8
+      }
+    }
+  ]
+  boundingObject Box {
+    size 1.8 0.15 0.8
+  }
+}
+
+# Traffic Cones
+Solid {
+  translation 1.3 1.4 0.25
+  name "fire_cone_1"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.98 0.35 0.02
+        roughness 0.4
+      }
+      geometry Cone {
+        bottomRadius 0.18
+        height 0.5
+      }
+    }
+  ]
+}
+Solid {
+  translation 3.8 3.7 0.25
+  name "fire_cone_2"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.98 0.35 0.02
+        roughness 0.4
+      }
+      geometry Cone {
+        bottomRadius 0.18
+        height 0.5
+      }
+    }
+  ]
+}
+
+# SURVIVOR 1: Trapped Near Fire Hazard Margin (Zone C)
+DEF victim_1 Pedestrian {
+  translation 1.8 1.8 1.27
+  rotation 0 0 1 0.5
+  name "victim_1"
+  controller ""
+  shirtColor 0.98 0.38 0.10
+  pantsColor 0.22 0.22 0.26
+  shoesColor 0.12 0.12 0.12
+  skinColor 0.96 0.76 0.66
+  enableBoundingObject TRUE
+  bodySlot [
+    Transform {
+      translation 0 0 0.05
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.98 0.45 0.15
+            emissiveColor 0.85 0.35 0.1
+            roughness 0.3
+          }
+          geometry Box {
+            size 0.3 0.18 0.16
+          }
+        }
+      ]
+    }
+  ]
+}
+
+# ==============================================================================
+# SECTION 4: DEBRIS MOUND CLUSTER & EDGE-CASE OBSTACLES (South-East)
+# ==============================================================================
+
+Solid {
+  translation 3.0 -4.5 0.5
+  rotation 0 0 1 0.78
+  name "hazard_debris"
+  model "debris"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.44 0.42 0.40
+        roughness 0.95
+      }
+      geometry Box {
+        size 2.8 2.8 1.0
+      }
+    }
+    Transform {
+      translation 0 0 0.52
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.38 0.40 0.42
+            roughness 0.5
+            metalness 0.85
+          }
+          geometry Box {
+            size 2.2 2.2 0.04
+          }
+        }
+      ]
+    }
+  ]
+  boundingObject Box {
+    size 2.8 2.8 1.0
+  }
+}
+
+# Natural Rock Boulders
+Solid {
+  translation 3.4 -4.8 0.4
+  name "disaster_rock_boulder_1"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.40 0.38 0.35
+        roughness 0.96
       }
       geometry Sphere {
         radius 0.65
       }
     }
   ]
+  boundingObject Sphere {
+    radius 0.65
+  }
 }
 
-# 3. Flood Plane Hazard (Semi-Transparent Water Surface)
+# Overturned Heavy Industrial Dumpster
 Solid {
-  translation -3.5 -3.5 0.02
-  rotation 0 0 1 0
-  name "hazard_flood"
-  model "flood"
+  translation 4.8 -3.8 0.55
+  rotation 0.3 0.8 0.4 1.75
+  name "overturned_dumpster"
   children [
     Shape {
       appearance PBRAppearance {
-        baseColor 0.06 0.38 0.82
-        transparency 0.25
-        roughness 0.10
-        metalness 0.70
+        baseColor 0.22 0.35 0.25
+        roughness 0.65
+        metalness 0.6
       }
       geometry Box {
-        size 7.0 7.0 0.04
+        size 1.8 1.2 1.0
       }
     }
   ]
-}
-
-# ==============================================================================
-# SURVIVOR / VICTIM MODELS (Tagged for RGB & Thermal Detection)
-# ==============================================================================
-
-# Survivor 1: Trapped Near Fire Hazard (High Thermal & RGB Signature)
-Solid {
-  translation 1.8 1.8 0.2
-  rotation 0 0 1 0.5
-  name "victim_1"
-  model "survivor"
-  description "survivor_thermal_confirmed_victim_1"
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0.98 0.72 0.25
-        emissiveColor 0.35 0.15 0.05
-        roughness 0.4
-      }
-      geometry Capsule {
-        radius 0.18
-        height 0.7
-      }
-    }
-  ]
-  boundingObject Capsule {
-    radius 0.18
-    height 0.7
+  boundingObject Box {
+    size 1.8 1.2 1.0
   }
 }
 
-# Survivor 2: Flood Zone Margin (Reflective Color Profile)
+# Ruptured Cross-Arena Industrial Pipe Line
 Solid {
-  translation -0.8 -2.5 0.2
-  rotation 0 0 1 -0.8
-  name "victim_2"
-  model "survivor"
-  description "survivor_flood_edge_victim_2"
+  translation 1.5 -2.2 0.12
+  rotation 0 1 0 1.5708
+  name "ruptured_pipeline_1"
   children [
     Shape {
       appearance PBRAppearance {
-        baseColor 0.95 0.85 0.15
-        roughness 0.45
-      }
-      geometry Capsule {
-        radius 0.18
-        height 0.7
-      }
-    }
-  ]
-  boundingObject Capsule {
-    radius 0.18
-    height 0.7
-  }
-}
-
-# Survivor 3: Partially Occluded in Debris Zone
-Solid {
-  translation -2.5 3.8 0.2
-  rotation 0 0 1 1.2
-  name "victim_3"
-  model "survivor"
-  description "survivor_rubble_trapped_victim_3"
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0.88 0.45 0.20
-        emissiveColor 0.20 0.10 0.05
+        baseColor 0.40 0.42 0.45
         roughness 0.5
+        metalness 0.8
       }
-      geometry Capsule {
-        radius 0.18
-        height 0.7
+      geometry Cylinder {
+        radius 0.11
+        height 3.2
       }
     }
   ]
-  boundingObject Capsule {
-    radius 0.18
-    height 0.7
+  boundingObject Cylinder {
+    radius 0.11
+    height 3.2
   }
 }
 
