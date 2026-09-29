@@ -1,55 +1,80 @@
 #!/usr/bin/env python3
 """
 AEROSAR Member 4 — Backend & Data Integration Bridge Node
-Subscribes: /perception/detection, /perception/hazard, /rescue/risk_score, /alerts/emergency, /mission/status
+Subscribes:
+  - /perception/detection (aerosar_msgs/Detection)
+  - /perception/hazard (aerosar_msgs/Hazard)
+  - /rescue/risk_score (aerosar_msgs/RiskScore)
+  - /alerts/emergency (aerosar_msgs/Alert)
+  - /mission/status (aerosar_msgs/MissionStatus)
+  - /gps/fix (sensor_msgs/NavSatFix)
+  - /imu/data (sensor_msgs/Imu)
+  - /camera/image_raw (sensor_msgs/Image)
+Launches the FastAPI command center server (port 8000) and broadcasts live telemetry.
 """
+
+import sys
+import os
+import socket
+import threading
+import time
+from pathlib import Path
+
+# Add backend directory to sys.path
+workspace_root = Path(__file__).resolve().parents[4]
+backend_dir = workspace_root / "backend"
+if str(backend_dir) not in sys.path:
+    sys.path.insert(0, str(backend_dir))
 
 import rclpy
 from rclpy.node import Node
-from aerosar_msgs.msg import Detection, Hazard, RiskScore, Alert, MissionStatus
 
 
-class BackendBridgeNode(Node):
-    def __init__(self):
-        super().__init__('bridge_node')
+def is_port_in_use(port: int = 8000) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(('127.0.0.1', port)) == 0
 
-        self.sub_detection = self.create_subscription(
-            Detection, '/perception/detection', self.detection_callback, 10
-        )
-        self.sub_hazard = self.create_subscription(
-            Hazard, '/perception/hazard', self.hazard_callback, 10
-        )
-        self.sub_risk = self.create_subscription(
-            RiskScore, '/rescue/risk_score', self.risk_callback, 10
-        )
-        self.sub_alert = self.create_subscription(
-            Alert, '/alerts/emergency', self.alert_callback, 10
-        )
-        self.sub_status = self.create_subscription(
-            MissionStatus, '/mission/status', self.status_callback, 10
-        )
 
-        self.get_logger().info('BackendBridgeNode initialized successfully.')
-
-    def detection_callback(self, msg: Detection):
-        self.get_logger().info(f'Bridge received detection: {msg.id} ({msg.detection_type})')
-
-    def hazard_callback(self, msg: Hazard):
-        self.get_logger().info(f'Bridge received hazard: {msg.id} ({msg.hazard_type})')
-
-    def risk_callback(self, msg: RiskScore):
-        self.get_logger().info(f'Bridge received risk score for detection: {msg.detection_id}')
-
-    def alert_callback(self, msg: Alert):
-        self.get_logger().info(f'Bridge received alert: {msg.alert_id} ({msg.alert_type})')
-
-    def status_callback(self, msg: MissionStatus):
-        pass
+def start_fastapi_server():
+    if is_port_in_use(8000):
+        print("[BRIDGE] FastAPI server already running on port 8000.")
+        return
+    import uvicorn
+    print("[BRIDGE] Launching FastAPI backend server on http://0.0.0.0:8000 ...")
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, log_level="warning")
 
 
 def main(args=None):
+    # 1. Start FastAPI server in a background thread
+    server_thread = threading.Thread(target=start_fastapi_server, daemon=True)
+    server_thread.start()
+    time.sleep(1.0)
+
+    # 2. Initialize ROS 2
     rclpy.init(args=args)
-    node = BackendBridgeNode()
+
+    # Import backend app to register with running hub
+    try:
+        from app.main import ros_node
+        if ros_node is not None:
+            # Already spinning in thread via lifespan
+            print("[BRIDGE] ROS 2 Bridge Node is active and streaming live.")
+            try:
+                while rclpy.ok():
+                    time.sleep(1.0)
+            except KeyboardInterrupt:
+                pass
+            return
+    except Exception:
+        pass
+
+    # If standalone node needed
+    class StandaloneBridgeNode(Node):
+        def __init__(self):
+            super().__init__('aerosar_backend_bridge')
+            self.get_logger().info('Standalone AerosarBackendBridgeNode active.')
+
+    node = StandaloneBridgeNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

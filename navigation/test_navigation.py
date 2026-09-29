@@ -18,6 +18,13 @@ import os
 import math
 import unittest
 
+try:
+    import rclpy
+    ROS2_AVAILABLE = True
+except ImportError:
+    rclpy = None
+    ROS2_AVAILABLE = False
+
 # Ensure project root is in sys.path
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.dirname(SCRIPT_DIR)
@@ -216,6 +223,16 @@ class TestReactiveObstacleAvoidance(unittest.TestCase):
 class TestNavigationNode(unittest.TestCase):
     """Tests end-to-end integration of AerosarNavigationNode."""
 
+    @classmethod
+    def setUpClass(cls):
+        if ROS2_AVAILABLE and rclpy is not None and not rclpy.ok():
+            rclpy.init()
+
+    @classmethod
+    def tearDownClass(cls):
+        if ROS2_AVAILABLE and rclpy is not None and rclpy.ok():
+            rclpy.shutdown()
+
     def test_node_execution_cycle(self):
         node = AerosarNavigationNode()
         self.assertEqual(len(node.follower.waypoints), len(node.pattern_gen.waypoints))
@@ -249,6 +266,7 @@ class TestNavigationNode(unittest.TestCase):
         # In GPS denied mode, control loop maintains safe dead-reckoning velocity
         node._control_loop()
         self.assertGreater(node.total_commands_sent, 1)
+        node.destroy_node()
 
 
 class TestSafeRoutePlanning(unittest.TestCase):

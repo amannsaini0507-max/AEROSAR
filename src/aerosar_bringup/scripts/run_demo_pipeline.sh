@@ -80,9 +80,9 @@ sleep 1.0
 echo -e "${GREEN}✓ Process sweep complete. Ports and memory cleared.${NC}\n"
 
 # ------------------------------------------------------------------------------
-# STEP 2: Environment Sourcing
+# STEP 2: Environment Sourcing & Workspace Build
 # ------------------------------------------------------------------------------
-echo -e "${BOLD}[2/5] Sourcing ROS 2 and workspace environment...${NC}"
+echo -e "${BOLD}[2/5] Sourcing ROS 2 and building workspace...${NC}"
 if [[ -f "/opt/ros/humble/setup.bash" ]]; then
     source "/opt/ros/humble/setup.bash"
 elif [[ -f "/opt/ros/jazzy/setup.bash" ]]; then
@@ -91,11 +91,15 @@ else
     echo -e "${YELLOW}[WARN] Default ROS 2 /opt/ros path not found. Proceeding with existing environment.${NC}"
 fi
 
+echo -e "  Executing: ${CYAN}colcon build --symlink-install${NC}"
+(cd "${PROJECT_ROOT}" && colcon build --symlink-install)
+echo -e "${GREEN}✓ Workspace built successfully.${NC}"
+
 if [[ -f "${PROJECT_ROOT}/install/setup.bash" ]]; then
     source "${PROJECT_ROOT}/install/setup.bash"
     echo -e "${GREEN}✓ Local workspace environment sourced: ${PROJECT_ROOT}/install/setup.bash${NC}\n"
 else
-    echo -e "${RED}[ERROR] install/setup.bash not found! Build workspace with colcon build first.${NC}"
+    echo -e "${RED}[ERROR] install/setup.bash not found! Build failed.${NC}"
     exit 1
 fi
 
