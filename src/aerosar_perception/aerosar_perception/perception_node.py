@@ -116,7 +116,8 @@ class PerceptionNode(Node):
 
     def _publish_person_detection(self, x, y, w, h, confidence: float, source_msg: Image):
         det = Detection()
-        det.id = f"person_{int(time.time()*1000)}_{int(x)}_{int(y)}"
+        # Stable deterministic zone ID so multiple frames tracking the same person do not generate abrupt timestamp jumps
+        det.id = f"person_{int(x * 10)}_{int(y * 10)}"
         det.detection_type = 'person'
         det.confidence = float(confidence)
         det.bbox_x = float(x)
@@ -149,7 +150,7 @@ class PerceptionNode(Node):
             if (current_time - last_time) >= self.hazard_cooldown_seconds:
                 confidence = float(min(1.0, pixel_count / (img_pixels * 0.12)))
                 haz = Hazard()
-                haz.id = f"{hazard_type}_{str(uuid.uuid4())[:8]}"
+                haz.id = f"hazard_{hazard_type}"
                 haz.hazard_type = hazard_type
                 haz.confidence = confidence
                 haz.latitude = 0.0

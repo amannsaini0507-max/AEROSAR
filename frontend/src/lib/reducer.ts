@@ -121,8 +121,8 @@ function applyOne(model: MissionModel, msg: ServerMessage, now: number): Mission
     }
     case 'alert': {
       const a = msg.data;
-      // §13.4: dedupe by id — a retried sync batch must not duplicate alerts.
-      if (model.alerts.some((x) => x.id === a.alert_id)) return model;
+      // §13.4: dedupe by id or message — preserve initial alert creation timestamp and never overwrite
+      if (model.alerts.some((x) => x.id === a.alert_id || x.message === a.message)) return model;
       const alerts = [
         ...model.alerts,
         {

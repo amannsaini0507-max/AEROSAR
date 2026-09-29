@@ -28,7 +28,11 @@ export default function MissionStatusPanel({ model, now }: { model: MissionModel
   const survivors = Object.keys(model.survivors).length;
   const hazards = hazardCounts(model);
   const hazardTotal = Object.values(hazards).reduce((a, b) => a + b, 0);
-  const elapsed = missionStartedAt && mission ? ((mission.state === 'COMPLETE' ? mission.time : now) - missionStartedAt) / 1000 : 0;
+  const elapsed = mission
+    ? (mission.time < 1e11
+        ? Math.max(0, mission.time / 1000)
+        : Math.max(0, (mission.time - (missionStartedAt ?? mission.time)) / 1000))
+    : 0;
   const battery = mission?.battery ?? null;
   const denied = mission?.navMode === 'GPS_DENIED';
 

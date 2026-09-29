@@ -24,6 +24,13 @@ export function stampToMs(stamp: RosStamp | undefined | null, fallback = Date.no
 }
 
 export function formatClock(ms: number): string {
+  if (ms < 86400000) {
+    const totalSecs = Math.max(0, Math.floor(ms / 1000));
+    const h = Math.floor(totalSecs / 3600).toString().padStart(2, '0');
+    const m = Math.floor((totalSecs % 3600) / 60).toString().padStart(2, '0');
+    const s = (totalSecs % 60).toString().padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  }
   return new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 

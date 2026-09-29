@@ -29,6 +29,8 @@ from rclpy.node import Node
 from rclpy.executors import ExternalShutdownException
 from geometry_msgs.msg import Twist
 from sensor_msgs.msg import Image, Imu, NavSatFix, NavSatStatus
+from aerosar_msgs.msg import MissionStatus
+from builtin_interfaces.msg import Time as RosTime
 
 
 def clamp(value: float, value_min: float, value_max: float) -> float:
@@ -75,18 +77,22 @@ class WebotsDroneNode:
         self.__last_thermal_pub = 0.0
         self.__last_imu_pub = 0.0
         self.__last_gps_pub = 0.0
+        self.__last_status_pub = 0.0
+        self.__mission_start_epoch = time.time()
 
         # Target Update Intervals
         self.__camera_interval = 1.0 / 30.0    # ~30 Hz
         self.__thermal_interval = 1.0 / 10.0   # ~10 Hz
         self.__imu_interval = 1.0 / 50.0       # ~50 Hz
         self.__gps_interval = 1.0 / 10.0       # ~10 Hz
+        self.__status_interval = 1.0           # ~1 Hz
 
         # ROS 2 Entities
         self.__camera_pub = None
         self.__thermal_pub = None
         self.__imu_pub = None
         self.__gps_pub = None
+        self.__status_pub = None
         self.__cmd_vel_sub = None
         self.__synthetic_timer = None
         self.__synthetic_step_count = 0
@@ -128,6 +134,7 @@ class WebotsDroneNode:
         self.__thermal_pub = self.__node.create_publisher(Image, '/thermal/image_raw', 10)
         self.__imu_pub = self.__node.create_publisher(Imu, '/imu/data', 10)
         self.__gps_pub = self.__node.create_publisher(NavSatFix, '/gps/fix', 10)
+        self.__status_pub = self.__node.create_publisher(MissionStatus, '/mission/status', 10)
 
         self.__cmd_vel_sub = self.__node.create_subscription(
             Twist, '/navigation/cmd_vel', self.__cmd_vel_callback, 10
@@ -195,11 +202,16 @@ class WebotsDroneNode:
 
         try:
             now = time.time()
-            now_stamp = self.__node.get_clock().now().to_msg()
+            # Synchronize timing with Webots simulation clock
+            sim_time = float(self.__robot.getTime()) if self.__robot else (now - self.__mission_start_epoch)
+            current_epoch = self.__mission_start_epoch + sim_time
+            now_stamp = RosTime()
+            now_stamp.sec = int(current_epoch)
+            now_stamp.nanosec = int((current_epoch % 1.0) * 1e9)
 
             # 1. Publish /camera/image_raw (~30Hz)
-            if (now - self.__last_camera_pub) >= self.__camera_interval:
-                self.__last_camera_pub = now
+            if (sim_time - self.__last_camera_pub) >= self.__camera_interval:
+                self.__last_camera_pub = sim_time
                 if self.__camera:
                     img_data = self.__camera.getImage()
                     if img_data:
@@ -215,8 +227,8 @@ class WebotsDroneNode:
                         self.__camera_pub.publish(msg)
 
             # 2. Publish /thermal/image_raw (~10Hz)
-            if (now - self.__last_thermal_pub) >= self.__thermal_interval:
-                self.__last_thermal_pub = now
+            if (sim_time - self.__last_thermal_pub) >= self.__thermal_interval:
+                self.__last_thermal_pub = sim_time
                 if self.__thermal_camera:
                     t_data = self.__thermal_camera.getImage()
                     if t_data:
@@ -260,8 +272,8 @@ class WebotsDroneNode:
                     gps_valid = True
 
             # 4. Publish /imu/data (~50Hz)
-            if (now - self.__last_imu_pub) >= self.__imu_interval:
-                self.__last_imu_pub = now
+            if (sim_time - self.__last_imu_pub) >= self.__imu_interval:
+                self.__last_imu_pub = sim_time
                 cy = math.cos(yaw * 0.5)
                 sy = math.sin(yaw * 0.5)
                 cp = math.cos(pitch * 0.5)
@@ -285,8 +297,8 @@ class WebotsDroneNode:
                 self.__imu_pub.publish(imu_msg)
 
             # 5. Publish /gps/fix (~10Hz)
-            if (now - self.__last_gps_pub) >= self.__gps_interval:
-                self.__last_gps_pub = now
+            if (sim_time - self.__last_gps_pub) >= self.__gps_interval:
+                self.__last_gps_pub = sim_time
                 gps_msg = NavSatFix()
                 gps_msg.header.stamp = now_stamp
                 gps_msg.header.frame_id = 'gps_link'
@@ -303,7 +315,20 @@ class WebotsDroneNode:
                     gps_msg.altitude = float('nan')
                 self.__gps_pub.publish(gps_msg)
 
-            # 6. Motor PID Update
+            # 6. Publish /mission/status (~1Hz)
+            if (sim_time - self.__last_status_pub) >= self.__status_interval:
+                self.__last_status_pub = sim_time
+                stat_msg = MissionStatus()
+                stat_msg.mission_id = 'MISSION-AEROSAR-01'
+                stat_msg.state = 'SEARCHING'
+                stat_msg.battery_percent = float(max(5.0, 100.0 - (sim_time * 0.02)))
+                stat_msg.coverage_percent = float(min(95.0, 12.0 + (sim_time * 0.15)))
+                stat_msg.link_connected = True
+                stat_msg.stamp = now_stamp
+                if self.__status_pub:
+                    self.__status_pub.publish(stat_msg)
+
+            # 7. Motor PID Update
             if self.__motors_available:
                 if (now - self.__last_cmd_vel_time) > 1.0:
                     self.__target_twist = Twist()
@@ -336,9 +361,12 @@ class WebotsDroneNode:
 
     def __synthetic_publish_step(self):
         """Fallback generator when Webots is not connected so the video feed and telemetry are always live."""
-        now_stamp = self.__node.get_clock().now().to_msg()
         self.__synthetic_step_count += 1
         t = self.__synthetic_step_count * 0.033
+        current_epoch = self.__mission_start_epoch + t
+        now_stamp = RosTime()
+        now_stamp.sec = int(current_epoch)
+        now_stamp.nanosec = int((current_epoch % 1.0) * 1e9)
 
         # 1. Synthetic Camera Frame (400x240 BGRA)
         w, h = 400, 240
@@ -391,6 +419,18 @@ class WebotsDroneNode:
         imu_msg.orientation.w = 1.0
         imu_msg.linear_acceleration.z = 9.81
         self.__imu_pub.publish(imu_msg)
+
+        # 4. Periodic Mission Status (at ~1Hz)
+        if self.__synthetic_step_count % 30 == 0:
+            stat_msg = MissionStatus()
+            stat_msg.mission_id = 'MISSION-AEROSAR-01'
+            stat_msg.state = 'SEARCHING'
+            stat_msg.battery_percent = float(max(5.0, 100.0 - (t * 0.02)))
+            stat_msg.coverage_percent = float(min(95.0, 12.0 + (t * 0.15)))
+            stat_msg.link_connected = True
+            stat_msg.stamp = now_stamp
+            if self.__status_pub:
+                self.__status_pub.publish(stat_msg)
 
     def destroy(self):
         if self.__motors_available:

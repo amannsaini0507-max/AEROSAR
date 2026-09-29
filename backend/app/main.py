@@ -164,6 +164,7 @@ def init_ros2_bridge():
                 self.last_thermal_time = 0.0
                 self.last_gps_time = 0.0
                 self.recent_boxes = []
+                self.known_alerts: dict[str, dict] = {}
 
             def on_detection(self, msg: RosDetection):
                 try:
@@ -206,16 +207,28 @@ def init_ros2_bridge():
                         hub.threadsafe_broadcast({"type": "priority", "data": {"ranked": ranked_payload}})
                         hub.threadsafe_broadcast({"type": "route", "data": {"survivor_id": det_model.id, "points": path_pts}})
 
-                        # Alert
-                        alert_dict = {
-                            "alert_id": f"alert-{det_model.id}",
-                            "alert_type": "CRITICAL_PRIORITY" if risk.priority_level == "CRITICAL" else "SURVIVOR_DETECTED",
-                            "message": f"Survivor detected ({risk.priority_level}): {risk.reason}",
-                            "latitude": lat,
-                            "longitude": lon,
-                            "stamp": det_dict["stamp"]
-                        }
-                        hub.threadsafe_broadcast({"type": "alert", "data": alert_dict})
+                        # Lock alert timestamp to initial detection time (never overwrite)
+                        alert_key = f"survivor_{det_model.id}"
+                        already_alerted = False
+                        for k, ex in self.known_alerts.items():
+                            if k.startswith("survivor_"):
+                                d = math.hypot(lat - ex.get("latitude", 0), lon - ex.get("longitude", 0)) * 111320.0
+                                if d < 5.0:
+                                    already_alerted = True
+                                    break
+
+                        if not already_alerted:
+                            alert_dict = {
+                                "alert_id": f"alert-survivor-{len(self.known_alerts) + 1}",
+                                "alert_type": "CRITICAL_PRIORITY" if risk.priority_level == "CRITICAL" else "SURVIVOR_DETECTED",
+                                "message": f"Survivor detected ({risk.priority_level}): {risk.reason}",
+                                "latitude": lat,
+                                "longitude": lon,
+                                "stamp": det_dict["stamp"]
+                            }
+                            self.known_alerts[alert_key] = alert_dict
+                            store.insert(create_event("alert", alert_dict, alert_dict["alert_id"]), synced=hub.is_link_connected)
+                            hub.threadsafe_broadcast({"type": "alert", "data": alert_dict})
 
                         # Track detection bbox for live video feed HUD overlay
                         lbl = f"SURVIVOR ({int(det_model.confidence * 100)}%)" if not det_model.thermal_confirmed else f"SURVIVOR+HEAT ({int(det_model.confidence * 100)}%)"
@@ -251,15 +264,20 @@ def init_ros2_bridge():
 
                     if hub.is_link_connected:
                         hub.threadsafe_broadcast({"type": "hazard", "data": haz_dict})
-                        alert_dict = {
-                            "alert_id": f"alert-haz-{haz_model.id}",
-                            "alert_type": "HAZARD_DETECTED",
-                            "message": f"{haz_model.hazard_type.upper()} disaster hazard detected (conf: {haz_model.confidence:.2f})",
-                            "latitude": lat,
-                            "longitude": lon,
-                            "stamp": haz_dict["stamp"]
-                        }
-                        hub.threadsafe_broadcast({"type": "alert", "data": alert_dict})
+                        # Deduplicate hazard alert by type so timestamp stays fixed at initial discovery
+                        alert_key = f"hazard_{haz_model.hazard_type}"
+                        if alert_key not in self.known_alerts:
+                            alert_dict = {
+                                "alert_id": f"alert-haz-{haz_model.hazard_type}",
+                                "alert_type": "HAZARD_DETECTED",
+                                "message": f"{haz_model.hazard_type.upper()} disaster hazard detected (conf: {haz_model.confidence:.2f})",
+                                "latitude": lat,
+                                "longitude": lon,
+                                "stamp": haz_dict["stamp"]
+                            }
+                            self.known_alerts[alert_key] = alert_dict
+                            store.insert(create_event("alert", alert_dict, alert_dict["alert_id"]), synced=hub.is_link_connected)
+                            hub.threadsafe_broadcast({"type": "alert", "data": alert_dict})
                 except Exception as e:
                     self.get_logger().error(f"Error in on_hazard: {e}")
 
@@ -405,7 +423,26 @@ async def lifespan(_: FastAPI):
     loop = asyncio.get_running_loop()
     hub.register_loop(loop)
     init_ros2_bridge()
+
+    async def heartbeat_worker():
+        while True:
+            try:
+                await asyncio.sleep(1.0)
+                if hub.is_link_connected and hub.clients:
+                    # Update heartbeat timestamp
+                    latest_mission_status["stamp"] = {
+                        "sec": int(time.time()),
+                        "nanosec": 0
+                    }
+                    await hub.broadcast_direct({"type": "mission_status", "data": latest_mission_status})
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                pass
+
+    hb_task = asyncio.create_task(heartbeat_worker())
     yield
+    hb_task.cancel()
     if ros_node is not None:
         try:
             ros_node.destroy_node()
