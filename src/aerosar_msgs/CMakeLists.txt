@@ -12,11 +12,11 @@ find_package(builtin_interfaces REQUIRED)
 
 # Generate ROS 2 message interfaces
 rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/Alert.msg"
   "msg/Detection.msg"
   "msg/Hazard.msg"
-  "msg/RiskScore.msg"
-  "msg/Alert.msg"
   "msg/MissionStatus.msg"
+  "msg/RiskScore.msg"
   DEPENDENCIES builtin_interfaces
 )
 

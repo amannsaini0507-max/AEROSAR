@@ -1,185 +1,26 @@
 #VRML_SIM R2023b utf8
 
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackground.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/objects/floors/protos/RectangleArena.proto"
-EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023b/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
 
 WorldInfo {
-  basicTimeStep 8
-  defaultDamping Damping {
-    linear 0.5
-    angular 0.5
-  }
 }
 Viewpoint {
   orientation -0.5773502691896257 0.5773502691896257 0.5773502691896257 2.0944
-  position 0 0 12
+  position 0 0 10
 }
 TexturedBackground {
 }
 TexturedBackgroundLight {
 }
 RectangleArena {
-  floorSize 12 12
 }
-
-# ==========================================================
-# Hazard Objects & Victim Placeholders (Task 1 / Scenarios)
-# ==========================================================
-
-# 1. Fire Hazard Cube
-Solid {
-  translation 2.5 2.5 0.25
-  rotation 0 0 1 0
-  name "hazard_fire"
-  model "fire"
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 1 0.2 0
-        emissiveColor 1 0.4 0
-        roughness 0.1
-      }
-      geometry Box {
-        size 0.6 0.6 0.5
-      }
-    }
-  ]
-  boundingObject Box {
-    size 0.6 0.6 0.5
-  }
-}
-
-# 2. Smoke Hazard Representation
-Solid {
-  translation 2.8 2.8 0.8
-  rotation 0 0 1 0
-  name "hazard_smoke"
-  model "smoke"
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0.6 0.6 0.6
-        transparency 0.5
-        roughness 0.9
-      }
-      geometry Sphere {
-        radius 0.45
-      }
-    }
-  ]
-}
-
-# 3. Flood Plane Representation
-Solid {
-  translation -2.5 -2.5 0.02
-  rotation 0 0 1 0
-  name "hazard_flood"
-  model "flood"
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0.05 0.35 0.85
-        transparency 0.25
-        roughness 0.1
-        metalness 0.7
-      }
-      geometry Box {
-        size 4 4 0.04
-      }
-    }
-  ]
-}
-
-# 4. Debris Pile Hazard
-Solid {
-  translation -2.5 2.5 0.25
-  rotation 0 0 1 0
-  name "hazard_debris"
-  model "debris"
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0.5 0.45 0.4
-        roughness 0.95
-      }
-      geometry Box {
-        size 1.2 1.2 0.5
-      }
-    }
-  ]
-  boundingObject Box {
-    size 1.2 1.2 0.5
-  }
-}
-
-# 5. Survivor / Victim 1 (Close to Fire Hazard for Scenario 2 Critical Test)
-Solid {
-  translation 2.0 1.8 0.15
-  rotation 0 0 1 0
-  name "victim_1"
-  model "survivor"
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 1 0.75 0.2
-        roughness 0.5
-      }
-      geometry Capsule {
-        radius 0.15
-        height 0.6
-      }
-    }
-  ]
-  boundingObject Capsule {
-    radius 0.15
-    height 0.6
-  }
-}
-
-# 6. Survivor / Victim 2 (At edge of Flood Hazard for Scenario 1 Test)
-Solid {
-  translation -0.4 -2.5 0.15
-  rotation 0 0 1 0
-  name "victim_2"
-  model "survivor"
-  children [
-    Shape {
-      appearance PBRAppearance {
-        baseColor 0.9 0.7 0.3
-        roughness 0.5
-      }
-      geometry Capsule {
-        radius 0.15
-        height 0.6
-      }
-    }
-  ]
-  boundingObject Capsule {
-    radius 0.15
-    height 0.6
-  }
-}
-
-# ==========================================================
-# DJI Mavic 2 PRO Drone Model with Thermal Proxy Camera
-# ==========================================================
 Mavic2Pro {
-  translation 0 0 0.1
-  rotation 0 0 1 0
-  name "Mavic 2 PRO"
+  hidden linearVelocity_0 0.11096318155134814 -0.10102511434638495 -0.6746527675377979
+  hidden angularVelocity_0 0.00015761908798008883 0.00015515403742490092 -0.1135275530806956
+  translation 0.06235666646747516 -0.2203185558725816 2.2660221452834737
+  rotation 0.004601655442592405 0.007938346639901634 -0.9999579028238199 0.5569588371593693
   controller "<extern>"
-  cameraSlot [
-    Camera {
-      name "camera"
-      width 400
-      height 240
-    }
-    Camera {
-      name "thermal_camera"
-      width 400
-      height 240
-    }
-  ]
 }

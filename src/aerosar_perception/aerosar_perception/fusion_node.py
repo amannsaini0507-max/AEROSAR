@@ -1,53 +1,143 @@
 #!/usr/bin/env python3
 """
 AEROSAR Member 2 — Sensor Fusion & Geotagging Node
-Subscribes: /perception/person, /imu/data, /gps/fix
-Publishes: /perception/detection (aerosar_msgs/Detection)
+Combines RGB detections with thermal heat signature verification and GPS/IMU pose geotagging.
+Subscribes:
+  - /perception/person (aerosar_msgs/Detection)
+  - /thermal/image_raw (sensor_msgs/Image)
+  - /imu/data (sensor_msgs/Imu)
+  - /gps/fix (sensor_msgs/NavSatFix)
+Publishes:
+  - /perception/detection (aerosar_msgs/Detection)
 """
 
+import math
+import time
+import cv2
+import numpy as np
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Imu, NavSatFix
+from sensor_msgs.msg import Image, Imu, NavSatFix
 from aerosar_msgs.msg import Detection
+from cv_bridge import CvBridge
 
 
 class SensorFusionNode(Node):
     def __init__(self):
         super().__init__('fusion_node')
+        self.bridge = CvBridge()
 
-        self.latest_imu = None
-        self.latest_gps = None
+        self.latest_thermal_cv = None
+        self.latest_thermal_stamp = None
+        self.latest_gps: NavSatFix = None
+        self.latest_imu: Imu = None
 
-        self.sub_imu = self.create_subscription(
-            Imu, '/imu/data', self.imu_callback, 10
+        # Deduplication cache (spatial radius ~5.0m, duration 15.0s)
+        self.published_detections = []
+        self.dedup_radius_meters = 5.0
+        self.dedup_time_seconds = 15.0
+
+        # Subscriptions
+        self.sub_thermal = self.create_subscription(
+            Image, '/thermal/image_raw', self.thermal_callback, 10
+        )
+        self.sub_person = self.create_subscription(
+            Detection, '/perception/person', self.person_callback, 10
         )
         self.sub_gps = self.create_subscription(
             NavSatFix, '/gps/fix', self.gps_callback, 10
         )
-        self.sub_candidate = self.create_subscription(
-            Detection, '/perception/person', self.candidate_callback, 10
+        self.sub_imu = self.create_subscription(
+            Imu, '/imu/data', self.imu_callback, 10
         )
 
-        self.pub_fused_detection = self.create_publisher(
+        # Publisher
+        self.pub_detection = self.create_publisher(
             Detection, '/perception/detection', 10
         )
 
-        self.get_logger().info('SensorFusionNode initialized successfully.')
+        self.get_logger().info('SensorFusionNode initialized: Multi-Sensor RGB+Thermal+GPS/IMU active.')
+
+    def thermal_callback(self, msg: Image):
+        try:
+            self.latest_thermal_cv = self.bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+            self.latest_thermal_stamp = msg.header.stamp
+        except Exception as e:
+            self.get_logger().debug(f'Thermal conversion error: {e}')
+
+    def gps_callback(self, msg: NavSatFix):
+        if not (math.isnan(msg.latitude) or math.isnan(msg.longitude)):
+            self.latest_gps = msg
 
     def imu_callback(self, msg: Imu):
         self.latest_imu = msg
 
-    def gps_callback(self, msg: NavSatFix):
-        self.latest_gps = msg
+    def person_callback(self, det_msg: Detection):
+        # 1. Thermal Heat-Check Verification
+        thermal_confirmed = False
+        if self.latest_thermal_cv is not None:
+            try:
+                img_h, img_w = self.latest_thermal_cv.shape[:2]
+                x1 = max(0, int(det_msg.bbox_x))
+                y1 = max(0, int(det_msg.bbox_y))
+                x2 = min(img_w, int(det_msg.bbox_x + det_msg.bbox_w))
+                y2 = min(img_h, int(det_msg.bbox_y + det_msg.bbox_h))
 
-    def candidate_callback(self, msg: Detection):
-        # Geotag and fuse telemetry with candidate detection
-        fused = msg
-        if self.latest_gps is not None:
-            fused.latitude = self.latest_gps.latitude
-            fused.longitude = self.latest_gps.longitude
-            fused.altitude = self.latest_gps.altitude
-        self.pub_fused_detection.publish(fused)
+                if x2 > x1 and y2 > y1:
+                    roi = self.latest_thermal_cv[y1:y2, x1:x2]
+                    # If high thermal value detected in region of interest
+                    if roi.size > 0 and (np.mean(roi) > 110 or np.max(roi) > 160):
+                        thermal_confirmed = True
+            except Exception as e:
+                self.get_logger().debug(f'Thermal ROI verification exception: {e}')
+
+        # 2. Geotagging
+        lat = 0.0
+        lon = 0.0
+        alt = 0.0
+        if self.latest_gps is not None and not math.isnan(self.latest_gps.latitude):
+            lat = self.latest_gps.latitude
+            lon = self.latest_gps.longitude
+            alt = self.latest_gps.altitude
+
+        # 3. Deduplication Check
+        now = time.time()
+        self.published_detections = [
+            d for d in self.published_detections if (now - d['time']) < self.dedup_time_seconds
+        ]
+
+        is_duplicate = False
+        if lat != 0.0 or lon != 0.0:
+            for d in self.published_detections:
+                dist_m = math.hypot(lat - d['lat'], lon - d['lon']) * 111000.0
+                if dist_m < self.dedup_radius_meters:
+                    is_duplicate = True
+                    break
+
+        if is_duplicate:
+            self.get_logger().debug(f'Detection at ({lat:.5f}, {lon:.5f}) suppressed by deduplication.')
+            return
+
+        # 4. Construct and publish fused Detection
+        fused = Detection()
+        fused.id = det_msg.id
+        fused.detection_type = det_msg.detection_type
+        fused.confidence = det_msg.confidence
+        fused.bbox_x = det_msg.bbox_x
+        fused.bbox_y = det_msg.bbox_y
+        fused.bbox_w = det_msg.bbox_w
+        fused.bbox_h = det_msg.bbox_h
+        fused.thermal_confirmed = thermal_confirmed
+        fused.latitude = float(lat)
+        fused.longitude = float(lon)
+        fused.altitude = float(alt)
+        fused.stamp = det_msg.stamp
+
+        self.pub_detection.publish(fused)
+        self.published_detections.append({'lat': lat, 'lon': lon, 'time': now})
+        self.get_logger().info(
+            f'Fused Detection: id={fused.id}, Lat={lat:.5f}, Lon={lon:.5f}, Thermal={thermal_confirmed}, Conf={fused.confidence:.2f}'
+        )
 
 
 def main(args=None):

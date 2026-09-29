@@ -1,16 +1,14 @@
+# Build and install directories
+build/
+install/
+log/
+
 # Python
 __pycache__/
 *.py[cod]
-*.egg-info/
-.venv/
-venv/
-.env
-
-# ROS 2 / colcon
-build/
-build
-install/
-log/
+*$py.class
+*.pt
+*.onnx
 
 # Webots
 *.wbt.bak
