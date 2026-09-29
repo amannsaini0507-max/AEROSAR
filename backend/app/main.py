@@ -163,6 +163,7 @@ def init_ros2_bridge():
                 self.last_cam_time = 0.0
                 self.last_thermal_time = 0.0
                 self.last_gps_time = 0.0
+                self.last_status_time = 0.0
                 self.recent_boxes = []
                 self.known_alerts: dict[str, dict] = {}
 
@@ -292,6 +293,7 @@ def init_ros2_bridge():
                         "nav_mode": "AUTO_SEARCH",
                         "stamp": {"sec": int(msg.stamp.sec), "nanosec": int(msg.stamp.nanosec)}
                     }
+                    self.last_status_time = time.time()
                     global latest_mission_status
                     latest_mission_status = stat_dict
                     event = create_event("status", stat_dict, f"status-{msg.mission_id}-{int(time.time())}")
@@ -428,8 +430,10 @@ async def lifespan(_: FastAPI):
         while True:
             try:
                 await asyncio.sleep(1.0)
-                if hub.is_link_connected and hub.clients:
-                    # Update heartbeat timestamp
+                # Only broadcast synthetic fallback if no status received from drone in 3s
+                bridge_status_age = (time.time() - ros_node.last_status_time) if (ros_node and hasattr(ros_node, 'last_status_time')) else 999.0
+                if bridge_status_age > 3.0 and hub.is_link_connected and hub.clients:
+                    # Update heartbeat timestamp fallback
                     latest_mission_status["stamp"] = {
                         "sec": int(time.time()),
                         "nanosec": 0
