@@ -156,107 +156,132 @@ def init_ros2_bridge():
                 self.sub_cam = self.create_subscription(
                     Image, '/camera/image_raw', self.on_cam, 10
                 )
+                self.sub_thermal = self.create_subscription(
+                    Image, '/thermal/image_raw', self.on_thermal, 10
+                )
 
                 self.last_cam_time = 0.0
+                self.last_thermal_time = 0.0
                 self.last_gps_time = 0.0
+                self.recent_boxes = []
 
             def on_detection(self, msg: RosDetection):
-                lat = float(msg.latitude) if not math.isnan(msg.latitude) else BASE_LAT
-                lon = float(msg.longitude) if not math.isnan(msg.longitude) else BASE_LON
-                det_dict = {
-                    "id": msg.id,
-                    "detection_type": msg.detection_type,
-                    "confidence": float(msg.confidence),
-                    "bbox_x": float(msg.bbox_x),
-                    "bbox_y": float(msg.bbox_y),
-                    "bbox_w": float(msg.bbox_w),
-                    "bbox_h": float(msg.bbox_h),
-                    "thermal_confirmed": bool(msg.thermal_confirmed),
-                    "latitude": lat,
-                    "longitude": lon,
-                    "altitude": float(msg.altitude) if not math.isnan(msg.altitude) else 1.5,
-                    "stamp": {"sec": msg.stamp.sec, "nanosec": msg.stamp.nanosec}
-                }
-                det_model = Detection(**det_dict)
-                event = create_event("detection", det_model, det_model.id)
-                store.insert(event, synced=hub.is_link_connected)
-
-                # Compute explainable risk score
-                hazards = [Hazard.model_validate(r["payload"]) for r in store.list("hazard")]
-                detections = [Detection.model_validate(r["payload"]) for r in store.list("detection")]
-                risk = score_detection(det_model, hazards, detections)
-                risk_event = EventIn(event_id=f"risk-{det_model.id}", event_type="risk_score", payload=risk.model_dump(mode="json"))
-                store.insert(risk_event, synced=hub.is_link_connected)
-
-                # Compute safe route from base to survivor
-                path_pts = route_planner.plan_safe_path(BASE_LAT, BASE_LON, lat, lon)
-
-                if hub.is_link_connected:
-                    hub.threadsafe_broadcast({"type": "detection", "data": det_dict})
-                    hub.threadsafe_broadcast({"type": "risk_score", "data": risk.model_dump(mode="json")})
-                    # Also broadcast ranked priority list
-                    priorities = sorted(store.list("risk_score"), key=lambda r: r["payload"]["score"], reverse=True)
-                    ranked_payload = [p["payload"] for p in priorities]
-                    hub.threadsafe_broadcast({"type": "priority", "data": {"ranked": ranked_payload}})
-                    hub.threadsafe_broadcast({"type": "route", "data": {"survivor_id": det_model.id, "points": path_pts}})
-
-                    # Alert
-                    alert_dict = {
-                        "alert_id": f"alert-{det_model.id}",
-                        "alert_type": "CRITICAL_PRIORITY" if risk.priority_level == "CRITICAL" else "SURVIVOR_DETECTED",
-                        "message": f"Survivor detected ({risk.priority_level}): {risk.reason}",
+                try:
+                    lat = float(msg.latitude) if not math.isnan(msg.latitude) else BASE_LAT
+                    lon = float(msg.longitude) if not math.isnan(msg.longitude) else BASE_LON
+                    det_dict = {
+                        "id": msg.id,
+                        "detection_type": msg.detection_type,
+                        "confidence": float(msg.confidence),
+                        "bbox_x": float(msg.bbox_x),
+                        "bbox_y": float(msg.bbox_y),
+                        "bbox_w": float(msg.bbox_w),
+                        "bbox_h": float(msg.bbox_h),
+                        "thermal_confirmed": bool(msg.thermal_confirmed),
                         "latitude": lat,
                         "longitude": lon,
-                        "stamp": det_dict["stamp"]
+                        "altitude": float(msg.altitude) if not math.isnan(msg.altitude) else 1.5,
+                        "stamp": {"sec": int(msg.stamp.sec), "nanosec": int(msg.stamp.nanosec)}
                     }
-                    hub.threadsafe_broadcast({"type": "alert", "data": alert_dict})
+                    det_model = Detection(**det_dict)
+                    event = create_event("detection", det_model, det_model.id)
+                    store.insert(event, synced=hub.is_link_connected)
+
+                    # Compute explainable risk score
+                    hazards = [Hazard.model_validate(r["payload"]) for r in store.list("hazard")]
+                    detections = [Detection.model_validate(r["payload"]) for r in store.list("detection")]
+                    risk = score_detection(det_model, hazards, detections)
+                    risk_event = EventIn(event_id=f"risk-{det_model.id}", event_type="risk_score", payload=risk.model_dump(mode="json"))
+                    store.insert(risk_event, synced=hub.is_link_connected)
+
+                    # Compute safe route from base to survivor
+                    path_pts = route_planner.plan_safe_path(BASE_LAT, BASE_LON, lat, lon)
+
+                    if hub.is_link_connected:
+                        hub.threadsafe_broadcast({"type": "detection", "data": det_dict})
+                        hub.threadsafe_broadcast({"type": "risk_score", "data": risk.model_dump(mode="json")})
+                        # Also broadcast ranked priority list
+                        priorities = sorted(store.list("risk_score"), key=lambda r: r["payload"]["score"], reverse=True)
+                        ranked_payload = [p["payload"] for p in priorities]
+                        hub.threadsafe_broadcast({"type": "priority", "data": {"ranked": ranked_payload}})
+                        hub.threadsafe_broadcast({"type": "route", "data": {"survivor_id": det_model.id, "points": path_pts}})
+
+                        # Alert
+                        alert_dict = {
+                            "alert_id": f"alert-{det_model.id}",
+                            "alert_type": "CRITICAL_PRIORITY" if risk.priority_level == "CRITICAL" else "SURVIVOR_DETECTED",
+                            "message": f"Survivor detected ({risk.priority_level}): {risk.reason}",
+                            "latitude": lat,
+                            "longitude": lon,
+                            "stamp": det_dict["stamp"]
+                        }
+                        hub.threadsafe_broadcast({"type": "alert", "data": alert_dict})
+
+                        # Track detection bbox for live video feed HUD overlay
+                        lbl = f"SURVIVOR ({int(det_model.confidence * 100)}%)" if not det_model.thermal_confirmed else f"SURVIVOR+HEAT ({int(det_model.confidence * 100)}%)"
+                        self.recent_boxes.append({
+                            "x": float(det_model.bbox_x),
+                            "y": float(det_model.bbox_y),
+                            "w": float(det_model.bbox_w),
+                            "h": float(det_model.bbox_h),
+                            "label": lbl,
+                            "expiry": time.time() + 3.0
+                        })
+                except Exception as e:
+                    self.get_logger().error(f"Error in on_detection: {e}")
 
             def on_hazard(self, msg: RosHazard):
-                lat = float(msg.latitude) if not math.isnan(msg.latitude) and msg.latitude != 0.0 else (BASE_LAT + 0.00015)
-                lon = float(msg.longitude) if not math.isnan(msg.longitude) and msg.longitude != 0.0 else (BASE_LON + 0.00015)
-                haz_dict = {
-                    "id": msg.id,
-                    "hazard_type": msg.hazard_type,
-                    "confidence": float(msg.confidence),
-                    "latitude": lat,
-                    "longitude": lon,
-                    "stamp": {"sec": msg.stamp.sec, "nanosec": msg.stamp.nanosec}
-                }
-                haz_model = Hazard(**haz_dict)
-                event = create_event("hazard", haz_model, haz_model.id)
-                store.insert(event, synced=hub.is_link_connected)
-
-                # Register in route planner
-                route_planner.add_hazard(HazardCostZone(lat=lat, lon=lon, radius_m=8.0, severity=haz_model.confidence))
-
-                if hub.is_link_connected:
-                    hub.threadsafe_broadcast({"type": "hazard", "data": haz_dict})
-                    alert_dict = {
-                        "alert_id": f"alert-haz-{haz_model.id}",
-                        "alert_type": "HAZARD_DETECTED",
-                        "message": f"{haz_model.hazard_type.upper()} disaster hazard detected (conf: {haz_model.confidence:.2f})",
+                try:
+                    lat = float(msg.latitude) if not math.isnan(msg.latitude) and msg.latitude != 0.0 else (BASE_LAT + 0.00015)
+                    lon = float(msg.longitude) if not math.isnan(msg.longitude) and msg.longitude != 0.0 else (BASE_LON + 0.00015)
+                    haz_dict = {
+                        "id": msg.id,
+                        "hazard_type": msg.hazard_type,
+                        "confidence": float(msg.confidence),
                         "latitude": lat,
                         "longitude": lon,
-                        "stamp": haz_dict["stamp"]
+                        "stamp": {"sec": int(msg.stamp.sec), "nanosec": int(msg.stamp.nanosec)}
                     }
-                    hub.threadsafe_broadcast({"type": "alert", "data": alert_dict})
+                    haz_model = Hazard(**haz_dict)
+                    event = create_event("hazard", haz_model, haz_model.id)
+                    store.insert(event, synced=hub.is_link_connected)
+
+                    # Register in route planner
+                    route_planner.add_hazard(HazardCostZone(lat=lat, lon=lon, radius_m=8.0, severity=haz_model.confidence))
+
+                    if hub.is_link_connected:
+                        hub.threadsafe_broadcast({"type": "hazard", "data": haz_dict})
+                        alert_dict = {
+                            "alert_id": f"alert-haz-{haz_model.id}",
+                            "alert_type": "HAZARD_DETECTED",
+                            "message": f"{haz_model.hazard_type.upper()} disaster hazard detected (conf: {haz_model.confidence:.2f})",
+                            "latitude": lat,
+                            "longitude": lon,
+                            "stamp": haz_dict["stamp"]
+                        }
+                        hub.threadsafe_broadcast({"type": "alert", "data": alert_dict})
+                except Exception as e:
+                    self.get_logger().error(f"Error in on_hazard: {e}")
 
             def on_status(self, msg: RosMissionStatus):
-                stat_dict = {
-                    "mission_id": msg.mission_id,
-                    "state": msg.state,
-                    "battery_percent": float(msg.battery_percent),
-                    "coverage_percent": float(msg.coverage_percent),
-                    "link_connected": bool(msg.link_connected),
-                    "nav_mode": "AUTO_SEARCH",
-                    "stamp": {"sec": msg.stamp.sec, "nanosec": msg.stamp.nanosec}
-                }
-                global latest_mission_status
-                latest_mission_status = stat_dict
-                event = create_event("status", stat_dict, f"status-{msg.mission_id}-{int(time.time())}")
-                store.insert(event, synced=hub.is_link_connected)
-                if hub.is_link_connected:
-                    hub.threadsafe_broadcast({"type": "mission_status", "data": stat_dict})
+                try:
+                    stat_dict = {
+                        "mission_id": msg.mission_id,
+                        "state": msg.state,
+                        "battery_percent": float(msg.battery_percent),
+                        "coverage_percent": float(msg.coverage_percent),
+                        "link_connected": bool(msg.link_connected),
+                        "nav_mode": "AUTO_SEARCH",
+                        "stamp": {"sec": int(msg.stamp.sec), "nanosec": int(msg.stamp.nanosec)}
+                    }
+                    global latest_mission_status
+                    latest_mission_status = stat_dict
+                    event = create_event("status", stat_dict, f"status-{msg.mission_id}-{int(time.time())}")
+                    store.insert(event, synced=hub.is_link_connected)
+                    if hub.is_link_connected:
+                        hub.threadsafe_broadcast({"type": "mission_status", "data": stat_dict})
+                except Exception as e:
+                    self.get_logger().error(f"Error in on_status: {e}")
 
             def on_alert(self, msg: RosAlert):
                 alert_dict = {
@@ -300,7 +325,7 @@ def init_ros2_bridge():
 
             def on_cam(self, msg: Image):
                 now = time.time()
-                if (now - self.last_cam_time) < 0.5:  # ~2 Hz for WebSocket video preview
+                if (now - self.last_cam_time) < 0.10:  # ~10 Hz for fluid WebSocket video preview
                     return
                 self.last_cam_time = now
 
@@ -319,9 +344,48 @@ def init_ros2_bridge():
 
                     # Downsample slightly for crisp, low-latency socket frame
                     small = cv2.resize(bgr, (320, 240))
-                    _, buf = cv2.imencode('.jpg', small, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+
+                    # Overlay active survivor bounding boxes
+                    self.recent_boxes = [b for b in self.recent_boxes if b["expiry"] > now]
+                    h_s, w_s = small.shape[:2]
+                    for box in self.recent_boxes:
+                        bx = int(box["x"] * w_s)
+                        by = int(box["y"] * h_s)
+                        bw = max(12, int(box["w"] * w_s))
+                        bh = max(12, int(box["h"] * h_s))
+                        cv2.rectangle(small, (bx, by), (bx + bw, by + bh), (0, 255, 0), 2)
+                        cv2.putText(small, box["label"], (bx, max(12, by - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 0), 1)
+
+                    _, buf = cv2.imencode('.jpg', small, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
                     b64 = base64.b64encode(buf).decode('utf-8')
                     hub.threadsafe_broadcast({"type": "video_frame", "data": {"channel": "rgb", "jpeg_base64": b64}})
+                except Exception:
+                    pass
+
+            def on_thermal(self, msg: Image):
+                now = time.time()
+                if (now - self.last_thermal_time) < 0.20:  # ~5 Hz for thermal feed
+                    return
+                self.last_thermal_time = now
+
+                if not hub.is_link_connected or not hub.clients:
+                    return
+
+                try:
+                    np_arr = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, -1))
+                    if np_arr.shape[2] == 4:
+                        bgr = cv2.cvtColor(np_arr, cv2.COLOR_BGRA2BGR)
+                    elif np_arr.shape[2] == 3:
+                        bgr = cv2.cvtColor(np_arr, cv2.COLOR_RGB2BGR)
+                    else:
+                        bgr = cv2.cvtColor(np_arr, cv2.COLOR_GRAY2BGR)
+
+                    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+                    thermal_colored = cv2.applyColorMap(gray, cv2.COLORMAP_INFERNO)
+                    small = cv2.resize(thermal_colored, (320, 240))
+                    _, buf = cv2.imencode('.jpg', small, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
+                    b64 = base64.b64encode(buf).decode('utf-8')
+                    hub.threadsafe_broadcast({"type": "video_frame", "data": {"channel": "thermal", "jpeg_base64": b64}})
                 except Exception:
                     pass
 

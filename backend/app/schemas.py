@@ -1,7 +1,7 @@
 """HTTP and WebSocket data contracts for the AEROSAR backend."""
 
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any, Literal, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -11,8 +11,27 @@ def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def parse_stamp(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(value, tz=timezone.utc)
+    if isinstance(value, dict):
+        sec = value.get("sec", 0)
+        nanosec = value.get("nanosec", 0)
+        if sec > 0:
+            return datetime.fromtimestamp(sec + nanosec * 1e-9, tz=timezone.utc)
+        return utc_now()
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except Exception:
+            return utc_now()
+    return utc_now()
+
+
 class APIModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
 
 class Detection(APIModel):
@@ -28,6 +47,11 @@ class Detection(APIModel):
     longitude: float
     altitude: float = 0
     stamp: datetime = Field(default_factory=utc_now)
+
+    @field_validator("stamp", mode="before")
+    @classmethod
+    def validate_stamp(cls, v: Any) -> datetime:
+        return parse_stamp(v)
 
     @field_validator("detection_type")
     @classmethod
@@ -45,14 +69,24 @@ class Hazard(APIModel):
     longitude: float
     stamp: datetime = Field(default_factory=utc_now)
 
+    @field_validator("stamp", mode="before")
+    @classmethod
+    def validate_stamp(cls, v: Any) -> datetime:
+        return parse_stamp(v)
+
 
 class MissionStatus(APIModel):
     mission_id: str = "search-01"
-    state: Literal["IDLE", "SEARCHING", "RETURNING", "COMPLETE"] = "IDLE"
+    state: str = "IDLE"
     battery_percent: float = Field(ge=0, le=100)
     coverage_percent: float = Field(ge=0, le=100)
-    link_connected: bool
+    link_connected: bool = True
     stamp: datetime = Field(default_factory=utc_now)
+
+    @field_validator("stamp", mode="before")
+    @classmethod
+    def validate_stamp(cls, v: Any) -> datetime:
+        return parse_stamp(v)
 
 
 class EventIn(APIModel):
@@ -61,14 +95,24 @@ class EventIn(APIModel):
     payload: dict[str, Any]
     created_at: datetime = Field(default_factory=utc_now)
 
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def validate_created_at(cls, v: Any) -> datetime:
+        return parse_stamp(v)
+
 
 class Alert(APIModel):
     alert_id: str = Field(default_factory=lambda: str(uuid4()))
-    alert_type: Literal["SURVIVOR_DETECTED", "HAZARD_DETECTED", "CRITICAL_PRIORITY", "LINK_LOST", "LINK_RESTORED"]
+    alert_type: str = "INFO"
     message: str
     latitude: float = 0
     longitude: float = 0
     stamp: datetime = Field(default_factory=utc_now)
+
+    @field_validator("stamp", mode="before")
+    @classmethod
+    def validate_stamp(cls, v: Any) -> datetime:
+        return parse_stamp(v)
 
 
 class RiskScore(APIModel):

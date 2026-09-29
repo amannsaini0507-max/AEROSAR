@@ -265,14 +265,24 @@ def main(args=None):
     node = NavigationController()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, Exception):
         pass
     finally:
-        stop_cmd = Twist()
-        node.pub_cmd_vel.publish(stop_cmd)
-        node.destroy_node()
-        if rclpy.ok():
-            rclpy.shutdown()
+        try:
+            if rclpy.ok():
+                stop_cmd = Twist()
+                node.pub_cmd_vel.publish(stop_cmd)
+        except Exception:
+            pass
+        try:
+            node.destroy_node()
+        except Exception:
+            pass
+        try:
+            if rclpy.ok():
+                rclpy.shutdown()
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':

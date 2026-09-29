@@ -48,9 +48,10 @@ def launch_setup(context, *args, **kwargs):
         world_file_path = os.path.join(pkg_aerosar_sim, 'worlds', 'aerosar_disaster_world.wbt')
 
     # Webots execution command
-    webots_cmd = ['webots', world_file_path, '--batch', '--mode=realtime']
-    if not enable_gui_val:
-        webots_cmd.append('--no-rendering')
+    if enable_gui_val:
+        webots_cmd = ['webots', world_file_path, '--mode=realtime', '--port=1234']
+    else:
+        webots_cmd = ['webots', world_file_path, '--batch', '--mode=realtime', '--no-rendering', '--port=1234']
 
     # Environment definitions for Webots rendering & controller IPC
     webots_home = '/usr/local/webots'
@@ -70,8 +71,7 @@ def launch_setup(context, *args, **kwargs):
         'LIBGL_ALWAYS_SOFTWARE': '1',
         'WEBOTS_HOME': webots_home,
         'PYTHONPATH': current_pythonpath,
-        'LD_LIBRARY_PATH': current_ld_path,
-        'WEBOTS_CONTROLLER_URL': 'tcp://127.0.0.1:1234/Mavic 2 PRO'
+        'LD_LIBRARY_PATH': current_ld_path
     }
 
     # 1. Webots Simulation Process
