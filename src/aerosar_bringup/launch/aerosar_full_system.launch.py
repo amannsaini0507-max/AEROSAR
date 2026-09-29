@@ -49,7 +49,7 @@ def launch_setup(context, *args, **kwargs):
 
     # Webots execution command
     if enable_gui_val:
-        webots_cmd = ['webots', world_file_path, '--mode=realtime', '--port=1234']
+        webots_cmd = ['webots', world_file_path, '--batch', '--mode=realtime', '--port=1234']
     else:
         webots_cmd = ['webots', world_file_path, '--batch', '--mode=realtime', '--no-rendering', '--port=1234']
 
@@ -71,7 +71,8 @@ def launch_setup(context, *args, **kwargs):
         'LIBGL_ALWAYS_SOFTWARE': '1',
         'WEBOTS_HOME': webots_home,
         'PYTHONPATH': current_pythonpath,
-        'LD_LIBRARY_PATH': current_ld_path
+        'LD_LIBRARY_PATH': current_ld_path,
+        'WEBOTS_CONTROLLER_URL': 'tcp://127.0.0.1:1234/Mavic 2 PRO'
     }
 
     # 1. Webots Simulation Process

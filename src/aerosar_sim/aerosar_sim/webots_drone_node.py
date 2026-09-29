@@ -20,6 +20,13 @@ import sys
 import time
 from typing import Optional
 
+os.environ.setdefault('WEBOTS_HOME', '/usr/local/webots')
+os.environ.setdefault('GALLIUM_DRIVER', 'llvmpipe')
+os.environ.setdefault('LIBGL_ALWAYS_SOFTWARE', '1')
+webots_lib = os.path.join(os.environ['WEBOTS_HOME'], 'lib', 'controller')
+if webots_lib not in os.environ.get('LD_LIBRARY_PATH', ''):
+    os.environ['LD_LIBRARY_PATH'] = f"{webots_lib}:{os.environ.get('LD_LIBRARY_PATH', '')}"
+
 # Ensure Webots native controller python module takes precedence over any ROS packages
 if '/usr/local/webots/lib/controller/python' not in sys.path:
     sys.path.insert(0, '/usr/local/webots/lib/controller/python')

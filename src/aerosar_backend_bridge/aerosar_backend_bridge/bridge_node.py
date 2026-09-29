@@ -21,10 +21,17 @@ import time
 from pathlib import Path
 
 # Add backend directory to sys.path
-workspace_root = Path(__file__).resolve().parents[4]
-backend_dir = workspace_root / "backend"
-if str(backend_dir) not in sys.path:
-    sys.path.insert(0, str(backend_dir))
+current_path = Path(__file__).resolve()
+backend_found = False
+for p in [current_path] + list(current_path.parents):
+    candidate = p / "backend"
+    if (candidate / "app" / "main.py").exists():
+        if str(candidate) not in sys.path:
+            sys.path.insert(0, str(candidate))
+        backend_found = True
+        break
+if not backend_found and Path("/home/saksh/aerosar_ws_native/backend").exists():
+    sys.path.insert(0, "/home/saksh/aerosar_ws_native/backend")
 
 import rclpy
 from rclpy.node import Node
@@ -51,7 +58,8 @@ def main(args=None):
     time.sleep(1.0)
 
     # 2. Initialize ROS 2
-    rclpy.init(args=args)
+    if not rclpy.ok():
+        rclpy.init(args=args)
 
     # Import backend app to register with running hub
     try:
