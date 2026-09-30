@@ -156,3 +156,55 @@ def test_vehicle_state_machine_transitions_and_failsafes():
     assert hb["state"] == "EMERGENCY_LAND"
     assert hb["battery"] == 8.5
     assert hb["seq"] >= 1
+
+    # 6. Operator emergency landing triggers failsafe and generates structured report
+    sm_fresh = VehicleStateMachine()
+    sm_fresh.arm()
+    sm_fresh.start_flight()
+    _, op_report = sm_fresh.trigger_failsafe(
+        trigger="OPERATOR_COMMAND",
+        sim_time=15.0,
+        inputs={"command": "emergency_land"},
+        outcome="Operator commanded landing",
+    )
+    assert sm_fresh.state == VehicleState.EMERGENCY_LAND
+    assert op_report.trigger == "OPERATOR_COMMAND"
+    assert op_report.state_before == "IN_FLIGHT"
+    assert op_report.state_after == "EMERGENCY_LAND"
+
+
+def test_gps_noise_model():
+    """Verify GPS noise model adds realistic small Gaussian jitter < 1.5 m."""
+    import random
+    from aerosar_core.geo import add_gps_noise, geo_distance_m
+
+    rng = random.Random(12345)
+    lat_noisy, lon_noisy = add_gps_noise(BASE_LAT, BASE_LON, std_m=0.35, rng=rng)
+    dist_m = geo_distance_m(BASE_LAT, BASE_LON, lat_noisy, lon_noisy)
+    assert dist_m > 0.0, "Noise must jitter the coordinate"
+    assert dist_m < 1.5, f"Gaussian noise jitter too high: {dist_m} m"
+
+
+def test_synthetic_perception_engine():
+    """Verify synthetic perception matches Section 2 YOLOv8n benchmark and victim 3 thermal confirmation."""
+    from aerosar_core.perception import SyntheticPerceptionEngine
+
+    engine = SyntheticPerceptionEngine(seed=42, fov_radius_m=4.8)
+
+    # 1. Drone far away at (0, 0): no victims in FOV
+    dets_empty = engine.evaluate_candidates(drone_x=0.0, drone_y=0.0, drone_z=2.2, heading_deg=0.0, sim_time=1.0)
+    assert len(dets_empty) == 0
+
+    # 2. Drone approaching Zone C fire victim (5.5, -6.8)
+    dets_fire = engine.evaluate_candidates(drone_x=5.5, drone_y=-6.8, drone_z=2.2, heading_deg=0.0, sim_time=10.0)
+    assert len(dets_fire) == 1
+    v3 = dets_fire[0]
+    assert v3["id"] == "victim_3"
+    assert v3["thermal_confirmed"] is True
+    assert v3["confidence"] >= 0.85
+    assert "Fire Zone" in v3["description"]
+
+    # 3. Repeat evaluation: already detected victims are not duplicated
+    dets_repeat = engine.evaluate_candidates(drone_x=5.5, drone_y=-6.8, drone_z=2.2, heading_deg=0.0, sim_time=11.0)
+    assert len(dets_repeat) == 0
+

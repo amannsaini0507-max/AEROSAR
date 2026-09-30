@@ -2,6 +2,8 @@
 """
 AEROSAR Member 2 — Sensor Fusion & Geotagging Node
 Combines RGB detections with thermal heat signature verification and GPS/IMU pose geotagging.
+Delegates deduplication and fusion logic to pure-Python aerosar_core.fusion (Hard Rule 1).
+
 Subscribes:
   - /perception/person (aerosar_msgs/Detection)
   - /thermal/image_raw (sensor_msgs/Image)
@@ -12,7 +14,10 @@ Publishes:
 """
 
 import math
+import sys
 import time
+from pathlib import Path
+
 import cv2
 import numpy as np
 import rclpy
@@ -20,6 +25,20 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image, Imu, NavSatFix
 from aerosar_msgs.msg import Detection
 from cv_bridge import CvBridge
+
+# Resolve aerosar_core
+try:
+    ws_root = Path(__file__).resolve().parents[4]
+    if str(ws_root) not in sys.path:
+        sys.path.insert(0, str(ws_root))
+except Exception:
+    pass
+
+try:
+    from aerosar_core.fusion import SensorFusionEngine
+    HAS_CORE = True
+except ImportError:
+    HAS_CORE = False
 
 
 class SensorFusionNode(Node):
@@ -32,7 +51,12 @@ class SensorFusionNode(Node):
         self.latest_gps: NavSatFix = None
         self.latest_imu: Imu = None
 
-        # Deduplication cache (spatial radius ~5.0m, duration 15.0s)
+        # Core deduplication & fusion engine
+        if HAS_CORE:
+            self.fusion_engine = SensorFusionEngine(dedup_radius_m=5.0, dedup_window_s=15.0)
+        else:
+            self.fusion_engine = None
+
         self.published_detections = []
         self.dedup_radius_meters = 5.0
         self.dedup_time_seconds = 15.0
@@ -85,7 +109,6 @@ class SensorFusionNode(Node):
 
                 if x2 > x1 and y2 > y1:
                     roi = self.latest_thermal_cv[y1:y2, x1:x2]
-                    # If high thermal value detected in region of interest
                     if roi.size > 0 and (np.mean(roi) > 110 or np.max(roi) > 160):
                         thermal_confirmed = True
             except Exception as e:
@@ -100,23 +123,32 @@ class SensorFusionNode(Node):
             lon = self.latest_gps.longitude
             alt = self.latest_gps.altitude
 
-        # 3. Deduplication Check
+        # 3. Deduplication using aerosar_core if available
         now = time.time()
-        self.published_detections = [
-            d for d in self.published_detections if (now - d['time']) < self.dedup_time_seconds
-        ]
-
-        is_duplicate = False
-        if lat != 0.0 or lon != 0.0:
-            for d in self.published_detections:
-                dist_m = math.hypot(lat - d['lat'], lon - d['lon']) * 111000.0
-                if dist_m < self.dedup_radius_meters:
-                    is_duplicate = True
-                    break
-
-        if is_duplicate:
-            self.get_logger().debug(f'Detection at ({lat:.5f}, {lon:.5f}) suppressed by deduplication.')
-            return
+        if self.fusion_engine and HAS_CORE:
+            fused_core, is_new = self.fusion_engine.process_candidate(
+                candidate_id=det_msg.id,
+                detection_type=det_msg.detection_type,
+                confidence=det_msg.confidence,
+                bbox=(det_msg.bbox_x, det_msg.bbox_y, det_msg.bbox_w, det_msg.bbox_h),
+                drone_pose={"latitude": lat, "longitude": lon, "altitude": alt, "heading_deg": 0.0},
+                thermal_confirmed=thermal_confirmed,
+                timestamp=now,
+            )
+            if not is_new:
+                self.get_logger().debug(f'Detection at ({lat:.5f}, {lon:.5f}) suppressed by core deduplication.')
+                return
+        else:
+            self.published_detections = [
+                d for d in self.published_detections if (now - d['time']) < self.dedup_time_seconds
+            ]
+            if lat != 0.0 or lon != 0.0:
+                for d in self.published_detections:
+                    dist_m = math.hypot(lat - d['lat'], lon - d['lon']) * 111000.0
+                    if dist_m < self.dedup_radius_meters:
+                        self.get_logger().debug(f'Detection at ({lat:.5f}, {lon:.5f}) suppressed by deduplication.')
+                        return
+            self.published_detections.append({'lat': lat, 'lon': lon, 'time': now})
 
         # 4. Construct and publish fused Detection
         fused = Detection()
@@ -134,7 +166,6 @@ class SensorFusionNode(Node):
         fused.stamp = det_msg.stamp
 
         self.pub_detection.publish(fused)
-        self.published_detections.append({'lat': lat, 'lon': lon, 'time': now})
         self.get_logger().info(
             f'Fused Detection: id={fused.id}, Lat={lat:.5f}, Lon={lon:.5f}, Thermal={thermal_confirmed}, Conf={fused.confidence:.2f}'
         )

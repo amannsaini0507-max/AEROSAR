@@ -112,3 +112,22 @@ def geotag_detection(
     target_lat = drone_lat + (north_offset / LAT_SCALE)
     target_lon = drone_lon + (east_offset / scale_lon)
     return target_lat, target_lon
+
+
+def add_gps_noise(
+    lat: float,
+    lon: float,
+    std_m: float = 0.35,
+    rng = None,
+) -> Tuple[float, float]:
+    """
+    Applies small Gaussian noise to geodetic coordinates (lat, lon)
+    to model real GPS receiver measurement variance (deterministic & seeded if rng provided).
+    """
+    import random
+    r = rng if rng is not None else random
+    noise_north = r.gauss(0.0, std_m)
+    noise_east = r.gauss(0.0, std_m)
+    scale_lon = lon_scale_at(lat)
+    return lat + (noise_north / LAT_SCALE), lon + (noise_east / scale_lon)
+

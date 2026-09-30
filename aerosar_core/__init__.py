@@ -39,6 +39,11 @@ from .trajectory import (
     ObstaclePotentialField,
     generate_lawnmower_waypoints,
 )
+from .perception import (
+    SyntheticPerceptionEngine,
+    GroundTruthVictim,
+)
+from .geo import add_gps_noise
 
 __all__ = [
     "BASE_LAT",
@@ -48,6 +53,7 @@ __all__ = [
     "geodetic_to_enu",
     "geo_distance_m",
     "geotag_detection",
+    "add_gps_noise",
     "score_detection",
     "calculate_risk",
     "RiskResult",
@@ -64,4 +70,6 @@ __all__ = [
     "UniformCubicBSpline",
     "ObstaclePotentialField",
     "generate_lawnmower_waypoints",
+    "SyntheticPerceptionEngine",
+    "GroundTruthVictim",
 ]
