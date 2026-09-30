@@ -139,6 +139,37 @@ function checkPythonPackages(pythonCmd) {
   }
 }
 
+function ensurePythonVenv(systemPython) {
+  const venvDir = path.join(ROOT_DIR, '.venv');
+  const venvPython = IS_WIN
+    ? path.join(venvDir, 'Scripts', 'python.exe')
+    : path.join(venvDir, 'bin', 'python');
+
+  if (!fs.existsSync(venvPython)) {
+    log('VENV', 'Virtual environment .venv missing, creating...', colors.yellow);
+    try {
+      execSync(`"${systemPython}" -m venv "${venvDir}"`, { stdio: 'inherit', cwd: ROOT_DIR });
+    } catch (e) {
+      err('VENV', `Failed to create virtual environment: ${e.message}`);
+      return systemPython;
+    }
+  }
+
+  if (!checkPythonPackages(venvPython)) {
+    log('PIP', 'Installing Python dependencies from requirements.txt...', colors.yellow);
+    const reqPath = fs.existsSync(path.join(ROOT_DIR, 'requirements.txt'))
+      ? path.join(ROOT_DIR, 'requirements.txt')
+      : path.join(BACKEND_DIR, 'requirements.txt');
+    try {
+      execSync(`"${venvPython}" -m pip install -r "${reqPath}"`, { stdio: 'inherit', cwd: ROOT_DIR });
+    } catch (e) {
+      err('PIP', `Failed to install requirements.txt: ${e.message}`);
+    }
+  }
+
+  return venvPython;
+}
+
 // 2. Port Testing and Conflict Handling
 function isPortAvailable(port) {
   return new Promise((resolve) => {
@@ -345,6 +376,12 @@ async function main() {
     process.on('SIGHUP', cleanup);
   }
 
+  // Step 3.5: Ensure Python environment & dependencies
+  let activePython = pythonCmd;
+  if (!packagesOk) {
+    activePython = ensurePythonVenv(pythonCmd);
+  }
+
   // Step 4: Launch Backend
   log('LAUNCH', `Starting Backend on http://127.0.0.1:${BACKEND_PORT} (${IS_LOW_POWER ? 'LOW_POWER (15Hz)' : 'NORMAL (30Hz)'})...`);
   const backendEnv = {
@@ -355,7 +392,7 @@ async function main() {
   };
 
   backendProcess = spawn(
-    pythonCmd,
+    activePython,
     ['-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', String(BACKEND_PORT)],
     {
       cwd: BACKEND_DIR,
