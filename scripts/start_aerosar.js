@@ -431,13 +431,22 @@ async function main() {
   }
 
   // Step 6: Launch Frontend
+  const viteBin = path.join(FRONTEND_DIR, 'node_modules', 'vite', 'bin', 'vite.js');
   const npmCmd = IS_WIN ? 'npm.cmd' : 'npm';
   log('LAUNCH', `Starting Frontend on http://localhost:${FRONTEND_PORT}...`);
-  frontendProcess = spawn(npmCmd, ['run', 'dev', '--', '--port', String(FRONTEND_PORT)], {
-    cwd: FRONTEND_DIR,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    shell: false,
-  });
+  if (fs.existsSync(viteBin)) {
+    frontendProcess = spawn(process.execPath, [viteBin, '--port', String(FRONTEND_PORT)], {
+      cwd: FRONTEND_DIR,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: false,
+    });
+  } else {
+    frontendProcess = spawn(npmCmd, ['run', 'dev', '--', '--port', String(FRONTEND_PORT)], {
+      cwd: FRONTEND_DIR,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: IS_WIN ? true : false,
+    });
+  }
 
   frontendProcess.stdout.on('data', (d) => {
     const text = d.toString().trim();
