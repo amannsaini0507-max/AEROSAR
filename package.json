@@ -1,0 +1,12 @@
+{
+  "name": "aerosar",
+  "version": "1.0.0",
+  "description": "AEROSAR - AI-Powered Autonomous Drone for Search & Rescue (SIH 2026 PS 26177)",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/start_aerosar.js",
+    "verify": "node scripts/verify_headless.js",
+    "test:core": "pytest tests/test_aerosar_core.py -v",
+    "test": "pytest -v"
+  }
+}
