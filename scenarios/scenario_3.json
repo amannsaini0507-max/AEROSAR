@@ -1,0 +1,23 @@
+{
+  "id": "3",
+  "name": "Scenario 3: Collapsed Building + Survivor",
+  "seed": 303,
+  "description": "Tilted multi-storey collapsed concrete structure with rubble and partially trapped survivor.",
+  "default_lighting": "dusk",
+  "arena": { "width": 30, "length": 30 },
+  "drone_spawn": { "x": 6, "y": 1.5, "z": 6, "heading": 225 },
+  "zones": {
+    "zone_a_ruins": { "active": true, "position": [-6.5, 0, -5.5], "debris_radius": 6.0 },
+    "zone_b_flood": { "active": false, "position": [6, 0, -6] },
+    "zone_c_fire": { "active": false, "position": [6, 0, 7] },
+    "gps_denied": { "active": true, "bounds": [-10, -3, -9, -2] }
+  },
+  "victims": [
+    { "id": "survivor_rubble", "name": "Trapped Survivor (Rubble)", "position": [-5.8, 0.35, -4.6], "pose": "trapped", "clothing": "#477291", "temp_c": 36.4 }
+  ],
+  "hazards": [
+    { "id": "hazard_structure", "type": "damaged_structure", "position": [-6.5, 0, -5.5], "radius": 5.0, "confidence": 0.89 },
+    { "id": "hazard_debris", "type": "debris", "position": [-4.5, 0, -4.0], "radius": 3.5, "confidence": 0.82 }
+  ],
+  "expected_detections": { "survivors": 1, "hazards": 2, "priority": "HIGH" }
+}

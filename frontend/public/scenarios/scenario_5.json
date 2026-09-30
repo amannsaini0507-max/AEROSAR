@@ -1,0 +1,22 @@
+{
+  "id": "5",
+  "name": "Scenario 5: Network Failure & Offline Resilience",
+  "seed": 505,
+  "description": "Comms drop mid-flight; detections buffered to local SQLite outbox and flushed with zero event loss upon link restoration.",
+  "default_lighting": "dusk",
+  "arena": { "width": 30, "length": 30 },
+  "drone_spawn": { "x": 2, "y": 2.0, "z": -4, "heading": 120 },
+  "zones": {
+    "zone_a_ruins": { "active": true, "position": [-6.5, 0, -5.5] },
+    "zone_b_flood": { "active": true, "position": [6, 0.15, -6] },
+    "zone_c_fire": { "active": false, "position": [6, 0, 7] },
+    "gps_denied": { "active": false, "bounds": [-10, -3, -9, -2] }
+  },
+  "victims": [
+    { "id": "offline_survivor_01", "name": "Offline Survivor #1", "position": [1.5, 0.2, -2.5], "pose": "prone", "clothing": "#3d7a5a", "temp_c": 36.8 }
+  ],
+  "hazards": [
+    { "id": "hazard_debris_5", "type": "debris", "position": [0, 0, -2.0], "radius": 3.0, "confidence": 0.81 }
+  ],
+  "expected_detections": { "survivors": 1, "hazards": 1, "priority": "HIGH" }
+}

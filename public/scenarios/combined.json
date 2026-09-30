@@ -1,0 +1,27 @@
+{
+  "id": "combined",
+  "name": "Combined Demo (Scenario 2 + 5 Full Pipeline)",
+  "seed": 999,
+  "description": "Full end-to-end mission demonstrating active fire, critical survivor scoring, network cut/restore event outbox sync, and multi-zone tactical search.",
+  "default_lighting": "smoke",
+  "arena": { "width": 30, "length": 30 },
+  "drone_spawn": { "x": 0, "y": 1.5, "z": 0, "heading": 0 },
+  "zones": {
+    "zone_a_ruins": { "active": true, "position": [-6.5, 0, -5.5] },
+    "zone_b_flood": { "active": true, "position": [6, 0.15, -6] },
+    "zone_c_fire": { "active": true, "position": [5.5, 0, 6.5], "intensity": 1.3, "smoke_spread": 5.0 },
+    "gps_denied": { "active": true, "bounds": [-10, -3, -9, -2], "show_overlay": false }
+  },
+  "victims": [
+    { "id": "victim_3", "name": "Critical Fire Survivor (victim_3)", "position": [4.2, 0.22, 5.8], "pose": "prone", "clothing": "#c93b3b", "temp_c": 37.1 },
+    { "id": "survivor_flood", "name": "Flood Edge Survivor", "position": [3.8, 0.2, -4.2], "pose": "seated", "clothing": "#2b5c8f", "temp_c": 36.4 },
+    { "id": "offline_survivor_01", "name": "Rubble Survivor", "position": [-5.8, 0.35, -4.6], "pose": "trapped", "clothing": "#3d7a5a", "temp_c": 36.6 }
+  ],
+  "hazards": [
+    { "id": "hazard_fire", "type": "fire", "position": [5.5, 0, 6.5], "radius": 4.0, "confidence": 0.95 },
+    { "id": "hazard_smoke", "type": "smoke", "position": [6.2, 2.0, 7.8], "radius": 5.5, "confidence": 0.88 },
+    { "id": "hazard_flood", "type": "flood", "position": [6, 0, -6], "radius": 7.5, "confidence": 0.92 },
+    { "id": "hazard_structure", "type": "damaged_structure", "position": [-6.5, 0, -5.5], "radius": 5.0, "confidence": 0.89 }
+  ],
+  "expected_detections": { "survivors": 3, "hazards": 4, "priority": "CRITICAL" }
+}

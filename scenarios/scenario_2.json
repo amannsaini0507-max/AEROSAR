@@ -1,0 +1,23 @@
+{
+  "id": "2",
+  "name": "Scenario 2: Fire + Smoke + Survivor (Primary Demo)",
+  "seed": 202,
+  "description": "Active roaring fire with rising smoke plume and victim within 5m triggering CRITICAL priority.",
+  "default_lighting": "smoke",
+  "arena": { "width": 30, "length": 30 },
+  "drone_spawn": { "x": 0, "y": 1.5, "z": 0, "heading": 90 },
+  "zones": {
+    "zone_a_ruins": { "active": false, "position": [-7, 0, -6] },
+    "zone_b_flood": { "active": false, "position": [6, 0, -6] },
+    "zone_c_fire": { "active": true, "position": [5.5, 0, 6.5], "intensity": 1.2, "smoke_spread": 4.5 },
+    "gps_denied": { "active": false, "bounds": [-11, -3, -10, -2] }
+  },
+  "victims": [
+    { "id": "victim_3", "name": "Survivor near Fire (victim_3)", "position": [4.2, 0.22, 5.8], "pose": "prone", "clothing": "#c93b3b", "temp_c": 37.1 }
+  ],
+  "hazards": [
+    { "id": "hazard_fire", "type": "fire", "position": [5.5, 0, 6.5], "radius": 4.0, "confidence": 0.95 },
+    { "id": "hazard_smoke", "type": "smoke", "position": [6.2, 2.0, 7.8], "radius": 5.5, "confidence": 0.88 }
+  ],
+  "expected_detections": { "survivors": 1, "hazards": 2, "priority": "CRITICAL" }
+}

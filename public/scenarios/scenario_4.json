@@ -1,0 +1,22 @@
+{
+  "id": "4",
+  "name": "Scenario 4: GPS-Denied Navigation",
+  "seed": 404,
+  "description": "Defined GPS-denied volume under damaged structure where drone transitions to optical/inertial SLAM seamlessly.",
+  "default_lighting": "day",
+  "arena": { "width": 30, "length": 30 },
+  "drone_spawn": { "x": 0, "y": 2.5, "z": 0, "heading": 180 },
+  "zones": {
+    "zone_a_ruins": { "active": true, "position": [-6.5, 0, -5.5], "debris_radius": 5.0 },
+    "zone_b_flood": { "active": false, "position": [6, 0, -6] },
+    "zone_c_fire": { "active": false, "position": [6, 0, 7] },
+    "gps_denied": { "active": true, "bounds": [-10, -3, -9, -2], "show_overlay": true }
+  },
+  "victims": [
+    { "id": "survivor_zone4", "name": "Deep Ruin Survivor", "position": [-7.2, 0.25, -5.2], "pose": "seated", "clothing": "#8c4f2b", "temp_c": 36.6 }
+  ],
+  "hazards": [
+    { "id": "hazard_structure_4", "type": "damaged_structure", "position": [-6.5, 0, -5.5], "radius": 5.0, "confidence": 0.85 }
+  ],
+  "expected_detections": { "survivors": 1, "hazards": 1, "priority": "HIGH" }
+}

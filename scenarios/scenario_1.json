@@ -1,0 +1,23 @@
+{
+  "id": "1",
+  "name": "Scenario 1: Flood + Survivors",
+  "seed": 101,
+  "description": "Flooded basin covering ~30% of the arena with 2 victims at the flood edge.",
+  "default_lighting": "day",
+  "arena": { "width": 30, "length": 30 },
+  "drone_spawn": { "x": -8, "y": 1.5, "z": 8, "heading": 45 },
+  "zones": {
+    "zone_a_ruins": { "active": false, "position": [-7, 0, -6] },
+    "zone_b_flood": { "active": true, "position": [6, 0.15, -6], "size": [16, 16], "water_level": 0.25 },
+    "zone_c_fire": { "active": false, "position": [6, 0, 7] },
+    "gps_denied": { "active": false, "bounds": [-11, -3, -10, -2] }
+  },
+  "victims": [
+    { "id": "survivor_1", "name": "Survivor #1 (Flood Edge)", "position": [3.5, 0.22, -3.8], "pose": "seated", "clothing": "#2b5c8f", "temp_c": 36.5 },
+    { "id": "survivor_2", "name": "Survivor #2 (Shoreline)", "position": [6.8, 0.18, -1.2], "pose": "prone", "clothing": "#d47a32", "temp_c": 36.2 }
+  ],
+  "hazards": [
+    { "id": "hazard_flood", "type": "flood", "position": [6, 0, -6], "radius": 7.5, "confidence": 0.92 }
+  ],
+  "expected_detections": { "survivors": 2, "hazards": 1, "priority": "HIGH" }
+}

@@ -1,7 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import type { MissionModel } from '../types';
 import { geodeticToEnu } from '../lib/geo';
+import type { CameraViewMode, LightingVariant, QualityPreset, SensorChannel } from './sim3d/types';
+import { EnvironmentSystem } from './sim3d/EnvironmentSystem';
+import { TerrainSystem } from './sim3d/TerrainSystem';
+import { FireSmokeSystem } from './sim3d/FireSmokeSystem';
+import { WaterSystem } from './sim3d/WaterSystem';
+import { RuinsSystem } from './sim3d/RuinsSystem';
+import { DroneModel } from './sim3d/DroneModel';
+import { ThermalPipeline } from './sim3d/ThermalPipeline';
+import { PostProcessingPipeline } from './sim3d/PostProcessingPipeline';
+import { ScenarioManager } from './sim3d/ScenarioManager';
+import { PhotoModeManager } from './sim3d/PhotoMode';
 
 interface Simulator3DProps {
   model: MissionModel;
@@ -15,30 +26,44 @@ export default function Simulator3DView({
   lowPower = false,
 }: Simulator3DProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [channel, setChannel] = useState<'rgb' | 'thermal'>('rgb');
-  const [cameraMode, setCameraMode] = useState<'orbit' | 'drone_fpv' | 'top_down'>('orbit');
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // UI States
+  const [channel, setChannel] = useState<SensorChannel>('rgb');
+  const [cameraMode, setCameraMode] = useState<CameraViewMode>('orbit');
+  const [preset, setPreset] = useState<QualityPreset>(lowPower ? 'low' : 'high');
+  const [lighting, setLighting] = useState<LightingVariant>('day');
+  const [scenarioId, setScenarioId] = useState<string>('2'); // Scenario 2 (Fire & Critical Survivor) default primary demo
+  const [showZones, setShowZones] = useState<boolean>(false);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [photoModeActive, setPhotoModeActive] = useState<boolean>(false);
+  const [photoResolution, setPhotoResolution] = useState<'viewport' | '1080p' | '2k' | '4k'>('1080p');
   const [manualActive, setManualActive] = useState(false);
   const [gpsDenied, setGpsDenied] = useState(false);
   const [yoloMode, setYoloMode] = useState(false);
+  const [liveFps, setLiveFps] = useState<number>(60.0);
+  const [liveMs, setLiveMs] = useState<number>(16.6);
 
-  // Three.js instances ref
+  // Simulation instances ref
   const simRef = useRef<{
     renderer: THREE.WebGLRenderer;
     scene: THREE.Scene;
     mainCamera: THREE.PerspectiveCamera;
-    droneGroup: THREE.Group;
-    rotors: THREE.Mesh[];
-    fireLight: THREE.PointLight;
-    smokeParticles: THREE.Points;
-    waterMesh: THREE.Mesh;
+    fpvCamera: THREE.PerspectiveCamera;
+    envSystem: EnvironmentSystem;
+    terrainSystem: TerrainSystem;
+    fireSmokeSystem: FireSmokeSystem;
+    waterSystem: WaterSystem;
+    ruinsSystem: RuinsSystem;
+    drone: DroneModel;
+    thermalPipeline: ThermalPipeline;
+    postProcessing: PostProcessingPipeline;
+    scenarioManager: ScenarioManager;
+    photoMode: PhotoModeManager;
     dronePos: THREE.Vector3;
     droneVel: THREE.Vector3;
     droneRot: THREE.Euler;
     targetVel: THREE.Vector3;
-    fpvCamera: THREE.PerspectiveCamera;
-    renderTargetRGB: THREE.WebGLRenderTarget;
-    renderTargetThermal: THREE.WebGLRenderTarget;
-    thermalMaterial: THREE.ShaderMaterial;
     running: boolean;
   } | null>(null);
 
@@ -46,12 +71,10 @@ export default function Simulator3DView({
   channelRef.current = channel;
   const cameraModeRef = useRef(cameraMode);
   cameraModeRef.current = cameraMode;
-  const lowPowerRef = useRef(lowPower);
-  lowPowerRef.current = lowPower;
-  const gpsDeniedRef = useRef(gpsDenied);
-  gpsDeniedRef.current = gpsDenied;
+  const photoModeRef = useRef(photoModeActive);
+  photoModeRef.current = photoModeActive;
 
-  // Initialize Three.js 3D WebGL Arena
+  // Initialize Three.js high-fidelity WebGL scene
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -59,383 +82,222 @@ export default function Simulator3DView({
     const width = container.clientWidth || 640;
     const height = container.clientHeight || 360;
 
-    // 1. Renderer
+    // 1. Physically Based WebGL Renderer
     const renderer = new THREE.WebGLRenderer({
-      antialias: !lowPowerRef.current,
+      antialias: true,
       powerPreference: 'high-performance',
-      precision: 'mediump',
+      precision: 'highp',
     });
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    if (!lowPowerRef.current) {
-      renderer.shadowMap.enabled = true;
-      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    }
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
+    canvasRef.current = renderer.domElement;
 
-    // 2. Scene
+    // 2. Main Scene & Atmospheric Fog
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0f141c);
-    scene.fog = new THREE.FogExp2(0x0f141c, 0.015);
 
-    // 3. Cameras
-    const mainCamera = new THREE.PerspectiveCamera(50, width / height, 0.1, 150);
+    // 3. Perspective Cameras
+    const mainCamera = new THREE.PerspectiveCamera(50, width / height, 0.1, 200);
     mainCamera.position.set(0, 18, 22);
     mainCamera.lookAt(0, 0, 0);
 
-    const fpvCamera = new THREE.PerspectiveCamera(70, 4 / 3, 0.1, 60);
-    fpvCamera.rotation.x = -Math.PI / 4; // 45 deg tilt down
+    const fpvCamera = new THREE.PerspectiveCamera(72, 4 / 3, 0.1, 80);
+    fpvCamera.rotation.x = -Math.PI / 4; // 45 deg forward-downward tactical angle
 
-    // Offscreen render targets for drone sensors (320x240)
-    const renderTargetRGB = new THREE.WebGLRenderTarget(320, 240);
-    const renderTargetThermal = new THREE.WebGLRenderTarget(320, 240);
+    // 4. Subsystem Instantiations
+    const envSystem = new EnvironmentSystem(scene, renderer);
+    const terrainSystem = new TerrainSystem();
+    scene.add(terrainSystem.mesh);
+    scene.add(terrainSystem.rockInstances);
+    scene.add(terrainSystem.debrisInstances);
 
-    // Procedural terrain texture using offscreen canvas (Zero network assets)
-    const canvasTex = document.createElement('canvas');
-    canvasTex.width = 512;
-    canvasTex.height = 512;
-    const ctx = canvasTex.getContext('2d')!;
-    ctx.fillStyle = '#2d3326';
-    ctx.fillRect(0, 0, 512, 512);
-    // Add procedural dirt/gravel speckles
-    for (let i = 0; i < 4000; i++) {
-      const x = Math.random() * 512;
-      const y = Math.random() * 512;
-      const r = Math.random() * 2 + 0.5;
-      ctx.fillStyle = Math.random() > 0.5 ? '#1f241a' : '#3d4434';
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    const groundTexture = new THREE.CanvasTexture(canvasTex);
-    groundTexture.wrapS = THREE.RepeatWrapping;
-    groundTexture.wrapT = THREE.RepeatWrapping;
-    groundTexture.repeat.set(6, 6);
+    const waterSystem = new WaterSystem();
+    scene.add(waterSystem.mesh);
+    scene.add(waterSystem.debrisGroup);
 
-    // 4. Terrain: 30m x 30m Heightfield
-    const terrainGeo = new THREE.PlaneGeometry(30, 30, 48, 48);
-    terrainGeo.rotateX(-Math.PI / 2);
-    const posAttr = terrainGeo.attributes.position;
-    for (let i = 0; i < posAttr.count; i++) {
-      const vx = posAttr.getX(i);
-      const vz = posAttr.getZ(i);
-      // Gentle natural elevation variation
-      const elevation =
-        Math.sin(vx * 0.2) * Math.cos(vz * 0.2) * 0.45 +
-        Math.sin(vx * 0.4 + 1.2) * 0.15;
-      posAttr.setY(i, elevation);
-    }
-    terrainGeo.computeVertexNormals();
+    const fireSmokeSystem = new FireSmokeSystem();
+    scene.add(fireSmokeSystem.group);
 
-    const terrainMat = new THREE.MeshStandardMaterial({
-      map: groundTexture,
-      roughness: 0.9,
-      metalness: 0.1,
-    });
-    const terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
-    terrainMesh.receiveShadow = !lowPowerRef.current;
-    scene.add(terrainMesh);
+    const ruinsSystem = new RuinsSystem();
+    scene.add(ruinsSystem.group);
 
-    // 5. Lighting
-    const ambientLight = new THREE.AmbientLight(0xddeeff, 0.4);
-    scene.add(ambientLight);
+    const drone = new DroneModel();
+    drone.group.position.set(0, 1.5, 0);
+    drone.fpvMount.add(fpvCamera);
+    scene.add(drone.group);
+    scene.add(drone.blobShadow);
 
-    const dirLight = new THREE.DirectionalLight(0xfff8ee, 1.2);
-    dirLight.position.set(12, 25, 10);
-    if (!lowPowerRef.current) {
-      dirLight.castShadow = true;
-      dirLight.shadow.mapSize.width = 1024;
-      dirLight.shadow.mapSize.height = 1024;
-      dirLight.shadow.camera.near = 0.5;
-      dirLight.shadow.camera.far = 60;
-      dirLight.shadow.camera.left = -16;
-      dirLight.shadow.camera.right = 16;
-      dirLight.shadow.camera.top = 16;
-      dirLight.shadow.camera.bottom = -16;
-    }
-    scene.add(dirLight);
-
-    // 6. ZONE A: Collapsed Ruins (-7, 6)
-    const ruinsGroup = new THREE.Group();
-    ruinsGroup.position.set(-7, 0, -6); // Note Three.js Z corresponds to -Y ENU
-    const concreteMat = new THREE.MeshStandardMaterial({ color: 0x7a7d82, roughness: 0.85 });
-    for (let i = 0; i < 9; i++) {
-      const block = new THREE.Mesh(
-        new THREE.BoxGeometry(0.8 + Math.random() * 0.8, 0.4 + Math.random() * 0.9, 0.7 + Math.random() * 0.8),
-        concreteMat
-      );
-      block.position.set((Math.random() - 0.5) * 3, Math.random() * 0.4, (Math.random() - 0.5) * 3);
-      block.rotation.set(Math.random() * 0.4, Math.random() * Math.PI, Math.random() * 0.3);
-      block.castShadow = !lowPowerRef.current;
-      ruinsGroup.add(block);
-    }
-    // Victim 1 (partly occluded)
-    const victim1 = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.22, 0.7, 4, 8),
-      new THREE.MeshStandardMaterial({ color: 0x3b6ea5 })
+    const thermalPipeline = new ThermalPipeline();
+    const postProcessing = new PostProcessingPipeline(renderer, scene, mainCamera, width, height);
+    const scenarioManager = new ScenarioManager(
+      scene,
+      terrainSystem,
+      fireSmokeSystem,
+      waterSystem,
+      ruinsSystem,
+      envSystem
     );
-    victim1.position.set(0.3, 0.25, 0.2);
-    victim1.rotation.z = Math.PI / 2.2;
-    ruinsGroup.add(victim1);
-    scene.add(ruinsGroup);
-
-    // 7. ZONE B: Flooded Basin (7, 7) -> (7, -7) in Three.js
-    const waterGeo = new THREE.PlaneGeometry(7.5, 7.5);
-    waterGeo.rotateX(-Math.PI / 2);
-    const waterMat = new THREE.MeshStandardMaterial({
-      color: 0x1f5c88,
-      roughness: 0.15,
-      metalness: 0.7,
-      transparent: true,
-      opacity: 0.75,
-    });
-    const waterMesh = new THREE.Mesh(waterGeo, waterMat);
-    waterMesh.position.set(7, 0.1, -7);
-    scene.add(waterMesh);
-
-    // Victim 2 (floating marker nearby)
-    const victim2 = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.24, 0.8, 4, 8),
-      new THREE.MeshStandardMaterial({ color: 0xe08a3c })
-    );
-    victim2.position.set(7.2, 0.2, -6.8);
-    victim2.rotation.x = Math.PI / 2.5;
-    scene.add(victim2);
-
-    // 8. ZONE C: Fire Zone (6, -7) -> (6, 7) in Three.js
-    const fireGroup = new THREE.Group();
-    fireGroup.position.set(6, 0, 7);
-
-    // Charred ground
-    const charred = new THREE.Mesh(
-      new THREE.CircleGeometry(3.5, 24),
-      new THREE.MeshBasicMaterial({ color: 0x121110 })
-    );
-    charred.rotateX(-Math.PI / 2);
-    charred.position.y = 0.02;
-    fireGroup.add(charred);
-
-    // Flickering fire light
-    const fireLight = new THREE.PointLight(0xff6600, 3.5, 12, 1.8);
-    fireLight.position.set(0, 1.2, 0);
-    fireGroup.add(fireLight);
-
-    // Flame mesh core
-    const flameCore = new THREE.Mesh(
-      new THREE.ConeGeometry(0.6, 1.8, 8),
-      new THREE.MeshBasicMaterial({ color: 0xffaa00 })
-    );
-    flameCore.position.set(0, 0.9, 0);
-    fireGroup.add(flameCore);
-
-    // Particle Smoke
-    const smokeGeo = new THREE.BufferGeometry();
-    const smokeCount = lowPowerRef.current ? 30 : 90;
-    const smokePos = new Float32Array(smokeCount * 3);
-    for (let i = 0; i < smokeCount; i++) {
-      smokePos[i * 3] = (Math.random() - 0.5) * 1.5;
-      smokePos[i * 3 + 1] = Math.random() * 3.5;
-      smokePos[i * 3 + 2] = (Math.random() - 0.5) * 1.5;
-    }
-    smokeGeo.setAttribute('position', new THREE.BufferAttribute(smokePos, 3));
-    const smokeMat = new THREE.PointsMaterial({
-      color: 0x555555,
-      size: 0.35,
-      transparent: true,
-      opacity: 0.45,
-    });
-    const smokeParticles = new THREE.Points(smokeGeo, smokeMat);
-    fireGroup.add(smokeParticles);
-
-    // Victim 3 (within 5m of flame)
-    const victim3 = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.24, 0.8, 4, 8),
-      new THREE.MeshStandardMaterial({ color: 0xd9383a })
-    );
-    victim3.position.set(-1.2, 0.25, 0.8);
-    victim3.rotation.z = Math.PI / 2.3;
-    fireGroup.add(victim3);
-    scene.add(fireGroup);
-
-    // 9. Quadrotor Drone Mesh
-    const droneGroup = new THREE.Group();
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x111111, metalness: 0.8, roughness: 0.2 });
-    const bodyCenter = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.4), frameMat);
-    droneGroup.add(bodyCenter);
-
-    // 4 arms
-    const armMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
-    const arm1 = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.65), armMat);
-    arm1.rotation.z = Math.PI / 4;
-    arm1.rotation.x = Math.PI / 2;
-    droneGroup.add(arm1);
-    const arm2 = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.65), armMat);
-    arm2.rotation.z = -Math.PI / 4;
-    arm2.rotation.x = Math.PI / 2;
-    droneGroup.add(arm2);
-
-    // 4 spinning rotors
-    const rotors: THREE.Mesh[] = [];
-    const rotorMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.65 });
-    const rotorOffsets = [
-      [0.28, 0.08, 0.28],
-      [-0.28, 0.08, 0.28],
-      [0.28, 0.08, -0.28],
-      [-0.28, 0.08, -0.28],
-    ];
-    rotorOffsets.forEach(([rx, ry, rz]) => {
-      const rotor = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.01, 12), rotorMat);
-      rotor.position.set(rx, ry, rz);
-      droneGroup.add(rotor);
-      rotors.push(rotor);
-    });
-
-    droneGroup.position.set(0, 1.5, 0);
-    droneGroup.add(fpvCamera);
-    scene.add(droneGroup);
-
-    // Thermal Palette Custom Shader
-    const thermalMaterial = new THREE.ShaderMaterial({
-      uniforms: {
-        tDiffuse: { value: null },
-      },
-      vertexShader: `
-        varying vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        uniform sampler2D tDiffuse;
-        varying vec2 vUv;
-        void main() {
-          vec4 col = texture2D(tDiffuse, vUv);
-          float brightness = dot(col.rgb, vec3(0.299, 0.587, 0.114));
-          // Infernal Thermal Palette: dark purple -> magenta -> orange -> white
-          vec3 c1 = vec3(0.05, 0.0, 0.2);
-          vec3 c2 = vec3(0.6, 0.05, 0.5);
-          vec3 c3 = vec3(1.0, 0.5, 0.0);
-          vec3 c4 = vec3(1.0, 1.0, 0.9);
-          vec3 finalColor = mix(c1, c2, smoothstep(0.0, 0.35, brightness));
-          finalColor = mix(finalColor, c3, smoothstep(0.35, 0.7, brightness));
-          finalColor = mix(finalColor, c4, smoothstep(0.7, 1.0, brightness));
-          gl_FragColor = vec4(finalColor, 1.0);
-        }
-      `,
-    });
-
-    // Fullscreen quad for thermal post-process shader
-    const postScene = new THREE.Scene();
-    const postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-    const postQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), thermalMaterial);
-    postScene.add(postQuad);
+    const photoMode = new PhotoModeManager(renderer, scene, mainCamera, renderer.domElement);
 
     simRef.current = {
       renderer,
       scene,
       mainCamera,
-      droneGroup,
-      rotors,
-      fireLight,
-      smokeParticles,
-      waterMesh,
+      fpvCamera,
+      envSystem,
+      terrainSystem,
+      fireSmokeSystem,
+      waterSystem,
+      ruinsSystem,
+      drone,
+      thermalPipeline,
+      postProcessing,
+      scenarioManager,
+      photoMode,
       dronePos: new THREE.Vector3(0, 1.5, 0),
       droneVel: new THREE.Vector3(0, 0, 0),
       droneRot: new THREE.Euler(0, 0, 0),
       targetVel: new THREE.Vector3(0, 0, 0),
-      fpvCamera,
-      renderTargetRGB,
-      renderTargetThermal,
-      thermalMaterial,
       running: true,
     };
 
-    // Animation & Physics Substepping Loop (Fixed 120 Hz dynamics step)
+    // Load initial scenario (Scenario 2: Fire + Smoke + Critical Survivor)
+    scenarioManager.loadScenario(scenarioId, lighting);
+
+    // 5. High-Precision Fixed-Step Dynamics & Rendering Loop
     let animId = 0;
     let lastTime = performance.now();
     const fixedDt = 1.0 / 120.0;
     let accumulator = 0.0;
+    let fpsUpdateTimer = 0;
+    let offscreenSensorTimer = 0;
 
     const renderLoop = (timeNow: number) => {
       if (!simRef.current?.running) return;
 
-      const delta = (timeNow - lastTime) / 1000.0;
+      const delta = Math.min(0.1, (timeNow - lastTime) / 1000.0);
       lastTime = timeNow;
-      accumulator = Math.min(0.2, accumulator + delta);
+      const sim = simRef.current;
 
-      // Dynamics Sub-stepping at 120 Hz (gym-pybullet-drones formulation)
+      // In Photo Mode, pause simulation dynamics and update orbit controls
+      if (photoModeRef.current) {
+        sim.photoMode.update();
+        sim.postProcessing.render(delta);
+        animId = requestAnimationFrame(renderLoop);
+        return;
+      }
+
+      accumulator += delta;
+      // Fixed 120 Hz Sub-stepping (gym-pybullet-drones aerodynamics)
       while (accumulator >= fixedDt) {
         accumulator -= fixedDt;
-        const sim = simRef.current;
-        if (!sim) break;
 
-        // Rotor spin
-        sim.rotors.forEach((r, idx) => {
-          r.rotation.y += (idx % 2 === 0 ? 0.35 : -0.35);
-        });
-
-        // Fire flicker
-        sim.fireLight.intensity = 3.0 + Math.sin(timeNow * 0.01) * 0.8 + Math.random() * 0.4;
-
-        // Animate water
-        sim.waterMesh.position.y = 0.1 + Math.sin(timeNow * 0.002) * 0.03;
-
-        // Dynamics velocity tracking with drag and 1st order attitude
-        const tau = 0.12; // attitude response time constant
+        // Dynamics velocity tracking & 1st order attitude response
+        const tau = 0.12;
         const targetPitch = -sim.targetVel.z * 0.18;
         const targetRoll = sim.targetVel.x * 0.18;
 
         sim.droneRot.x += (targetPitch - sim.droneRot.x) * (fixedDt / tau);
         sim.droneRot.z += (targetRoll - sim.droneRot.z) * (fixedDt / tau);
 
-        // Position integration
         sim.dronePos.addScaledVector(sim.droneVel, fixedDt);
-        // Drag damping
-        sim.droneVel.addScaledVector(sim.targetVel.clone().sub(sim.droneVel), fixedDt * 3.5);
+        sim.droneVel.addScaledVector(sim.targetVel.clone().sub(sim.droneVel), fixedDt * 3.8);
 
-        // Keep drone inside 30m boundary
+        // Keep drone within 30m x 30m arena boundaries
         sim.dronePos.x = Math.max(-14.5, Math.min(14.5, sim.dronePos.x));
         sim.dronePos.z = Math.max(-14.5, Math.min(14.5, sim.dronePos.z));
-        sim.dronePos.y = Math.max(0.2, Math.min(15.0, sim.dronePos.y));
+        sim.dronePos.y = Math.max(0.2, Math.min(16.0, sim.dronePos.y));
 
-        sim.droneGroup.position.copy(sim.dronePos);
-        sim.droneGroup.rotation.copy(sim.droneRot);
+        sim.drone.group.position.copy(sim.dronePos);
+        sim.drone.group.rotation.copy(sim.droneRot);
       }
 
-      // Camera selection & Thermal vs RGB Render Pass
-      const sim = simRef.current;
-      if (sim) {
-        let activeCam: THREE.PerspectiveCamera = sim.mainCamera;
-        if (cameraModeRef.current === 'drone_fpv') {
-          activeCam = sim.fpvCamera;
-        } else if (cameraModeRef.current === 'top_down') {
-          sim.mainCamera.position.set(0, 28, 0);
-          sim.mainCamera.lookAt(0, 0, 0);
-          activeCam = sim.mainCamera;
-        } else {
-          sim.mainCamera.position.x = sim.dronePos.x + 14 * Math.sin(timeNow * 0.0003);
-          sim.mainCamera.position.z = sim.dronePos.z + 14 * Math.cos(timeNow * 0.0003);
-          sim.mainCamera.position.y = Math.max(8, sim.dronePos.y + 7);
-          sim.mainCamera.lookAt(sim.dronePos);
-          activeCam = sim.mainCamera;
-        }
+      const simTimeSec = timeNow / 1000.0;
 
-        if (channelRef.current === 'thermal') {
-          // Offscreen pass into render target texture
-          sim.renderer.setRenderTarget(sim.renderTargetRGB);
-          sim.renderer.render(sim.scene, activeCam);
-          sim.renderer.setRenderTarget(null);
+      // Update Subsystems
+      sim.drone.update(delta, simTimeSec, sim.dronePos.y, gpsDenied);
+      sim.fireSmokeSystem.update(delta, simTimeSec);
+      sim.waterSystem.update(simTimeSec);
+      sim.ruinsSystem.update(delta, simTimeSec);
+      sim.scenarioManager.update(simTimeSec);
 
-          // Thermal palette fragment shader pass
-          sim.thermalMaterial.uniforms.tDiffuse.value = sim.renderTargetRGB.texture;
-          sim.renderer.render(postScene, postCamera);
-        } else {
-          // Direct RGB render
-          sim.renderer.setRenderTarget(null);
-          sim.renderer.render(sim.scene, activeCam);
-        }
+      // Camera Positioning Mode
+      let activeCam: THREE.PerspectiveCamera = sim.mainCamera;
+      if (cameraModeRef.current === 'drone_fpv') {
+        activeCam = sim.fpvCamera;
+      } else if (cameraModeRef.current === 'top_down') {
+        sim.mainCamera.position.set(0, 32, 0);
+        sim.mainCamera.lookAt(0, 0, 0);
+        activeCam = sim.mainCamera;
+      } else if (cameraModeRef.current === 'ruins_cam') {
+        sim.mainCamera.position.set(-11, 4.5, -9);
+        sim.mainCamera.lookAt(-6.5, 1.2, -5.5);
+        activeCam = sim.mainCamera;
+      } else if (cameraModeRef.current === 'fire_cam') {
+        sim.mainCamera.position.set(2.5, 2.5, 3.5);
+        sim.mainCamera.lookAt(5.5, 1.2, 6.5);
+        activeCam = sim.mainCamera;
+      } else if (cameraModeRef.current === 'flood_cam') {
+        sim.mainCamera.position.set(2.0, 3.0, -10.5);
+        sim.mainCamera.lookAt(6.0, 0.2, -6.0);
+        activeCam = sim.mainCamera;
+      } else {
+        // Orbit mode around active drone
+        const orbitRadius = 13.5;
+        const orbitSpeed = 0.00025;
+        sim.mainCamera.position.x = sim.dronePos.x + orbitRadius * Math.sin(timeNow * orbitSpeed);
+        sim.mainCamera.position.z = sim.dronePos.z + orbitRadius * Math.cos(timeNow * orbitSpeed);
+        sim.mainCamera.position.y = Math.max(7.5, sim.dronePos.y + 6.5);
+        sim.mainCamera.lookAt(sim.dronePos);
+        activeCam = sim.mainCamera;
+      }
+
+      // Sensor Render Targets (Dual RGB / Thermal at 320x240, 10-15 Hz budget)
+      offscreenSensorTimer += delta;
+      if (offscreenSensorTimer >= 0.08) {
+        offscreenSensorTimer = 0;
+        // Offscreen RGB Sensor pass
+        sim.renderer.setRenderTarget(sim.thermalPipeline.renderTargetRGB);
+        sim.renderer.render(sim.scene, sim.fpvCamera);
+
+        // Offscreen Thermal Sensor pass
+        sim.thermalPipeline.renderThermalPass(
+          sim.renderer,
+          sim.scene,
+          sim.fpvCamera,
+          sim.thermalPipeline.renderTargetThermal
+        );
+        sim.renderer.setRenderTarget(null);
+      }
+
+      // Main Viewport Render
+      if (channelRef.current === 'thermal') {
+        // Render calibrated false-color thermal pass to viewport
+        sim.thermalPipeline.renderThermalPass(sim.renderer, sim.scene, activeCam, null);
+      } else {
+        // High-fidelity PBR pass with postprocessing
+        sim.postProcessing.camera = activeCam;
+        sim.postProcessing.renderPass.camera = activeCam;
+        sim.postProcessing.render(delta);
+      }
+
+      // Adaptive framerate protection monitoring
+      const curW = container?.clientWidth || 640;
+      const curH = container?.clientHeight || 360;
+      sim.postProcessing.updateAdaptiveResolution(curW, curH);
+
+      fpsUpdateTimer += delta;
+      if (fpsUpdateTimer >= 0.5) {
+        fpsUpdateTimer = 0;
+        setLiveFps(sim.postProcessing.currentFps);
+        setLiveMs(sim.postProcessing.currentFrameTimeMs);
       }
 
       animId = requestAnimationFrame(renderLoop);
@@ -450,6 +312,7 @@ export default function Simulator3DView({
       simRef.current.mainCamera.aspect = w / h;
       simRef.current.mainCamera.updateProjectionMatrix();
       simRef.current.renderer.setSize(w, h);
+      simRef.current.postProcessing.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
 
@@ -458,20 +321,57 @@ export default function Simulator3DView({
       window.removeEventListener('resize', handleResize);
       if (simRef.current) {
         simRef.current.running = false;
+        simRef.current.envSystem.dispose();
+        simRef.current.thermalPipeline.dispose();
+        simRef.current.postProcessing.dispose();
+        simRef.current.photoMode.dispose();
         simRef.current.renderer.dispose();
       }
     };
   }, []);
 
-  // Sync drone position from model telemetry if in autonomous mode
+  // Update Quality Preset
+  useEffect(() => {
+    const sim = simRef.current;
+    if (!sim || !containerRef.current) return;
+    const w = containerRef.current.clientWidth || 640;
+    const h = containerRef.current.clientHeight || 360;
+    sim.envSystem.setQuality(preset);
+    sim.terrainSystem.setQuality(preset);
+    sim.fireSmokeSystem.setQuality(preset);
+    sim.waterSystem.setQuality(preset);
+    sim.ruinsSystem.setQuality(preset);
+    sim.postProcessing.setPreset(preset, w, h);
+  }, [preset]);
+
+  // Update Lighting Variant
+  useEffect(() => {
+    simRef.current?.envSystem.setLighting(lighting);
+  }, [lighting]);
+
+  // Update Scenario
+  const handleScenarioChange = useCallback(
+    (id: string) => {
+      setScenarioId(id);
+      simRef.current?.scenarioManager.loadScenario(id, lighting).then((def) => {
+        if (def.default_lighting && lighting === 'day') {
+          setLighting(def.default_lighting);
+        }
+      });
+    },
+    [lighting]
+  );
+
+  // Update Zone Overlay
+  useEffect(() => {
+    simRef.current?.ruinsSystem.setShowZones(showZones);
+  }, [showZones]);
+
+  // Sync drone position from model telemetry in autonomous mode
   useEffect(() => {
     if (manualActive || !model.pose || !simRef.current) return;
-
-    // Convert geodetic to local ENU
     const [x, y, z] = geodeticToEnu(model.pose.lat, model.pose.lng, model.pose.altitude ?? 1.5);
-    // Three.js coords: X=East, Y=Altitude, Z=-North
     simRef.current.dronePos.set(x, z, -y);
-
     if (model.pose.heading != null) {
       simRef.current.droneRot.y = (-model.pose.heading * Math.PI) / 180.0;
     }
@@ -480,7 +380,6 @@ export default function Simulator3DView({
   // Keyboard navigation listener for manual flight override
   useEffect(() => {
     if (!manualActive) return;
-
     const keys: Record<string, boolean> = {};
 
     const updateVelocity = () => {
@@ -489,16 +388,14 @@ export default function Simulator3DView({
       let vz = 0;
       let vy = 0;
 
-      if (keys['KeyW'] || keys['ArrowUp']) vz -= 2.0;
-      if (keys['KeyS'] || keys['ArrowDown']) vz += 2.0;
-      if (keys['KeyA'] || keys['ArrowLeft']) vx -= 2.0;
-      if (keys['KeyD'] || keys['ArrowRight']) vx += 2.0;
-      if (keys['Space']) vy += 1.5;
-      if (keys['ShiftLeft'] || keys['KeyC']) vy -= 1.5;
+      if (keys['KeyW'] || keys['ArrowUp']) vz -= 2.5;
+      if (keys['KeyS'] || keys['ArrowDown']) vz += 2.5;
+      if (keys['KeyA'] || keys['ArrowLeft']) vx -= 2.5;
+      if (keys['KeyD'] || keys['ArrowRight']) vx += 2.5;
+      if (keys['Space']) vy += 2.0;
+      if (keys['ShiftLeft'] || keys['KeyC']) vy -= 2.0;
 
       simRef.current.targetVel.set(vx, vy, vz);
-
-      // Report manual velocity command to backend
       onSendCommand?.('manual_input', { vx, vy: -vz, vz: vy, yaw_rate: 0 });
     };
 
@@ -519,10 +416,9 @@ export default function Simulator3DView({
     };
   }, [manualActive, onSendCommand]);
 
-  // Section 2: 5 Hz YOLO Frame Dispatch to Backend (optional YOLO CPU inference mode)
+  // 5 Hz YOLO Frame Dispatch to Backend
   useEffect(() => {
     if (!yoloMode) return;
-
     const interval = setInterval(async () => {
       const sim = simRef.current;
       if (!sim) return;
@@ -534,12 +430,31 @@ export default function Simulator3DView({
           body: JSON.stringify({ image_base64: frameData }),
         });
       } catch {
-        // Fallback or offline silence
+        // Fallback silence
       }
     }, 200);
-
     return () => clearInterval(interval);
   }, [yoloMode]);
+
+  // Photo Mode handlers
+  const handleTogglePhotoMode = () => {
+    if (!simRef.current) return;
+    if (photoModeActive) {
+      simRef.current.photoMode.exitPhotoMode();
+      setPhotoModeActive(false);
+    } else {
+      simRef.current.photoMode.enterPhotoMode();
+      setPhotoModeActive(true);
+    }
+  };
+
+  const handleCapturePhoto = async () => {
+    if (!simRef.current) return;
+    await simRef.current.photoMode.captureSnapshot({
+      resolution: photoResolution,
+      fileNamePrefix: `aerosar_scenario_${scenarioId}`,
+    });
+  };
 
   // Command handlers
   const handleStart = () => onSendCommand?.('start');
@@ -548,13 +463,72 @@ export default function Simulator3DView({
   const handleRTL = () => onSendCommand?.('rtl');
   const handleEmergencyLand = () => onSendCommand?.('emergency_land');
 
+  // Fullscreen container style
+  const panelStyle: React.CSSProperties = isFullscreen
+    ? {
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        width: '100vw',
+        height: '100vh',
+        zIndex: 9999,
+        background: '#0a0d14',
+        margin: 0,
+        borderRadius: 0,
+        display: 'flex',
+        flexDirection: 'column',
+      }
+    : {
+        position: 'relative',
+      };
+
+  const canvasHeight = isFullscreen ? 'calc(100vh - 120px)' : '380px';
+
   return (
-    <section className="panel dashboard__sim3d" aria-label="Embedded 3D Disaster Arena Simulator">
-      <div className="panel__head">
-        <span className="panel__title">
+    <section
+      className={`panel dashboard__sim3d ${isFullscreen ? 'is-fullscreen' : ''}`}
+      style={panelStyle}
+      aria-label="Near-Photorealistic 3D Disaster Arena"
+    >
+      {/* Top Header Bar */}
+      <div className="panel__head" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span className="pulse-dot" style={{ position: 'static' }} />
-          3D WebGL Simulator (Three.js 30m Arena)
-        </span>
+          <span className="panel__title">
+            3D Tactical Arena (Three.js WebGL)
+          </span>
+          <span
+            style={{
+              fontSize: '11px',
+              fontFamily: 'monospace',
+              padding: '2px 6px',
+              background: liveFps >= 50 ? 'rgba(34, 197, 94, 0.2)' : 'rgba(234, 179, 8, 0.2)',
+              color: liveFps >= 50 ? '#4ade80' : '#facc15',
+              borderRadius: '4px',
+              border: `1px solid ${liveFps >= 50 ? '#22c55e' : '#eab308'}`,
+            }}
+          >
+            {liveFps.toFixed(1)} FPS ({liveMs.toFixed(1)}ms)
+          </span>
+        </div>
+
+        {/* Quality Preset Selector */}
+        <div style={{ display: 'flex', gap: '4px', alignItems: 'center', marginLeft: 'auto' }}>
+          <span style={{ fontSize: '11px', color: '#94a3b8' }}>Preset:</span>
+          {(['low', 'medium', 'high', 'ultra'] as QualityPreset[]).map((p) => (
+            <button
+              key={p}
+              type="button"
+              className={`btn-tag ${preset === p ? 'is-active' : ''}`}
+              onClick={() => setPreset(p)}
+              style={{ textTransform: 'capitalize', padding: '2px 6px', fontSize: '11px' }}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+
+        {/* RGB vs Thermal Mode */}
         <div className="segmented" role="tablist">
           <button
             type="button"
@@ -571,24 +545,99 @@ export default function Simulator3DView({
             Thermal
           </button>
         </div>
+
+        {/* Fullscreen / Expand Toggle */}
+        <button
+          type="button"
+          className="btn-control"
+          onClick={() => setIsFullscreen(!isFullscreen)}
+          title={isFullscreen ? 'Restore standard view' : 'Expand full screen'}
+          style={{ padding: '4px 10px', fontSize: '12px' }}
+        >
+          {isFullscreen ? 'Exit Fullscreen' : '⛶ Fullscreen'}
+        </button>
       </div>
 
-      <div className="panel__body" style={{ position: 'relative', overflow: 'hidden' }}>
-        {/* Three.js Canvas Container */}
-        <div ref={containerRef} style={{ width: '100%', height: '320px', minHeight: '300px' }} />
+      {/* Main 3D Canvas Area */}
+      <div className="panel__body" style={{ position: 'relative', overflow: 'hidden', flex: 1, padding: 0 }}>
+        <div
+          ref={containerRef}
+          style={{ width: '100%', height: canvasHeight, minHeight: '340px' }}
+        />
 
-        {/* View Mode Controls */}
+        {/* Top-Left: Scenario & Lighting Pickers */}
         <div
           style={{
             position: 'absolute',
-            top: '8px',
-            right: '8px',
+            top: '10px',
+            left: '10px',
             display: 'flex',
+            flexDirection: 'column',
             gap: '6px',
-            background: 'rgba(15, 20, 28, 0.8)',
-            padding: '4px 8px',
-            borderRadius: '4px',
+            background: 'rgba(11, 15, 23, 0.88)',
+            padding: '6px 10px',
+            borderRadius: '6px',
             zIndex: 10,
+            backdropFilter: 'blur(4px)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
+            maxWidth: '360px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: '#38bdf8' }}>Scenario:</span>
+            <select
+              value={scenarioId}
+              onChange={(e) => handleScenarioChange(e.target.value)}
+              style={{
+                background: '#1e293b',
+                color: '#f8fafc',
+                border: '1px solid #334155',
+                borderRadius: '4px',
+                padding: '2px 6px',
+                fontSize: '11px',
+                cursor: 'pointer',
+              }}
+            >
+              <option value="1">1: Flood + Survivors (Zone B)</option>
+              <option value="2">2: Fire + Smoke + Critical (Primary)</option>
+              <option value="3">3: Collapsed Building (Zone A)</option>
+              <option value="4">4: GPS-Denied Navigation</option>
+              <option value="5">5: Network Failure & Sync</option>
+              <option value="combined">Combined Demo (2 + 5)</option>
+            </select>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8' }}>Lighting:</span>
+            {(['day', 'dusk', 'night', 'smoke'] as LightingVariant[]).map((l) => (
+              <button
+                key={l}
+                type="button"
+                className={`btn-tag ${lighting === l ? 'is-active' : ''}`}
+                onClick={() => setLighting(l)}
+                style={{ textTransform: 'capitalize', padding: '1px 6px', fontSize: '10px' }}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Top-Right: Camera Mode Switcher */}
+        <div
+          style={{
+            position: 'absolute',
+            top: '10px',
+            right: '10px',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '4px',
+            background: 'rgba(11, 15, 23, 0.88)',
+            padding: '6px 8px',
+            borderRadius: '6px',
+            zIndex: 10,
+            backdropFilter: 'blur(4px)',
+            border: '1px solid rgba(255, 255, 255, 0.1)',
           }}
         >
           <button
@@ -612,9 +661,111 @@ export default function Simulator3DView({
           >
             Tactical Top
           </button>
+          <button
+            type="button"
+            className={`btn-tag ${cameraMode === 'fire_cam' ? 'is-active' : ''}`}
+            onClick={() => setCameraMode('fire_cam')}
+          >
+            Zone C
+          </button>
+          <button
+            type="button"
+            className={`btn-tag ${cameraMode === 'ruins_cam' ? 'is-active' : ''}`}
+            onClick={() => setCameraMode('ruins_cam')}
+          >
+            Zone A
+          </button>
+          <button
+            type="button"
+            className={`btn-tag ${cameraMode === 'flood_cam' ? 'is-active' : ''}`}
+            onClick={() => setCameraMode('flood_cam')}
+          >
+            Zone B
+          </button>
+
+          {/* Photo Mode Trigger */}
+          <button
+            type="button"
+            className={`btn-tag ${photoModeActive ? 'is-active' : ''}`}
+            onClick={handleTogglePhotoMode}
+            style={{
+              background: photoModeActive ? '#e11d48' : '#0284c7',
+              color: '#ffffff',
+              fontWeight: 600,
+            }}
+          >
+            {photoModeActive ? 'Exit Photo' : 'Photo Mode'}
+          </button>
         </div>
 
-        {/* Sensor & Control Overlays */}
+        {/* Photo Mode Active HUD Overlay */}
+        {photoModeActive && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '60px',
+              right: '10px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '8px',
+              background: 'rgba(15, 23, 42, 0.95)',
+              padding: '12px 14px',
+              borderRadius: '8px',
+              zIndex: 20,
+              border: '1px solid #38bdf8',
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+              width: '240px',
+            }}
+          >
+            <div style={{ fontSize: '13px', fontWeight: 600, color: '#38bdf8' }}>
+              Photo Mode (Simulation Paused)
+            </div>
+            <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+              Drag to orbit, scroll to zoom, right-click to pan.
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '11px', color: '#f8fafc' }}>Res:</span>
+              <select
+                value={photoResolution}
+                onChange={(e) => setPhotoResolution(e.target.value as 'viewport' | '1080p' | '2k' | '4k')}
+                style={{
+                  background: '#334155',
+                  color: '#fff',
+                  border: '1px solid #475569',
+                  borderRadius: '4px',
+                  padding: '2px 6px',
+                  fontSize: '11px',
+                  flex: 1,
+                }}
+              >
+                <option value="viewport">Viewport (1x)</option>
+                <option value="1080p">1080p FHD (1920x1080)</option>
+                <option value="2k">2K QHD (2560x1440)</option>
+                <option value="4k">4K UHD (3840x2160)</option>
+              </select>
+            </div>
+
+            <button
+              type="button"
+              className="btn-control"
+              onClick={handleCapturePhoto}
+              style={{
+                background: '#0284c7',
+                color: '#fff',
+                fontWeight: 600,
+                padding: '6px 12px',
+                borderRadius: '4px',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              Export PNG
+            </button>
+          </div>
+        )}
+
+        {/* Bottom Control Bar */}
         <div
           style={{
             position: 'absolute',
@@ -622,17 +773,21 @@ export default function Simulator3DView({
             left: '8px',
             right: '8px',
             display: 'flex',
+            flexWrap: 'wrap',
             justifyContent: 'space-between',
             alignItems: 'center',
-            background: 'rgba(15, 20, 28, 0.85)',
+            gap: '8px',
+            background: 'rgba(11, 15, 23, 0.92)',
             padding: '6px 12px',
             borderRadius: '6px',
             zIndex: 10,
             fontSize: '12px',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
           }}
         >
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <span><strong>Flight:</strong></span>
+          {/* Flight Controls */}
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 600, color: '#94a3b8' }}>Flight:</span>
             <button type="button" className="btn-control" onClick={handleStart}>
               Start
             </button>
@@ -654,14 +809,23 @@ export default function Simulator3DView({
             </button>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {/* Operational Toggles */}
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
               <input
                 type="checkbox"
                 checked={manualActive}
                 onChange={(e) => setManualActive(e.target.checked)}
               />
-              Manual (WASD)
+              WASD Manual
+            </label>
+            <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <input
+                type="checkbox"
+                checked={showZones}
+                onChange={(e) => setShowZones(e.target.checked)}
+              />
+              Show Zones
             </label>
             <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
               <input
@@ -680,7 +844,7 @@ export default function Simulator3DView({
                 checked={yoloMode}
                 onChange={(e) => setYoloMode(e.target.checked)}
               />
-              YOLO Inference
+              YOLO Infer
             </label>
           </div>
         </div>
