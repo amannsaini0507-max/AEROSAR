@@ -1,14 +1,11 @@
 """
-AEROSAR Command Center Backend & ROS 2 Bridge Server
-Member 4 — Backend, Risk Data & Mapping Lead
-SIH 2026 — PS 26177
-
-Provides:
-- Non-blocking WebSocket broadcast on /ws/live (and /ws/dashboard)
-- ROS 2 Bridge Node spinning in a background executor thread
-- Explainable Risk Scoring Engine
-- A* Safe Route Planner around hazard costmaps
-- Offline SQLite event queue & automatic reconnect synchronizer
+AEROSAR Command Center Backend & Hybrid ROS 2 / Standalone Server.
+Complies with Hard Rules:
+- Pure-Python aerosar_core logic integration (Two runtimes, one brain)
+- Optional rclpy import; starts in STANDALONE mode if missing
+- Versioned WebSocket v1 contract: { v: 1, type, seq, sim_time, payload }
+- Offline outbox buffering & replay logging in SQLite WAL mode under data/
+- 30 Hz live telemetry, explainable risk scoring, and A* safe route planning
 """
 
 import asyncio
@@ -16,22 +13,65 @@ import base64
 import json
 import math
 import os
+import sys
 import threading
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
+from uuid import uuid4
 
 import cv2
 import numpy as np
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import ValidationError
+
+# Ensure aerosar_core is resolvable
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from aerosar_core.geo import (
+    BASE_LAT,
+    BASE_LON,
+    BASE_ALT,
+    enu_to_geodetic,
+    geodetic_to_enu,
+    geo_distance_m,
+    geotag_detection,
+)
+from aerosar_core.risk import (
+    calculate_risk,
+    score_detection as core_score_detection,
+    RiskResult,
+    MAX_RELEVANT_DISTANCE,
+    MAX_RELEVANT_COUNT,
+)
+from aerosar_core.route import AStarPlanner, HazardZone
+from aerosar_core.vehicle import (
+    VehicleStateMachine,
+    VehicleState,
+    SafetyReport,
+)
+from aerosar_core.trajectory import (
+    UniformCubicBSpline,
+    ObstaclePotentialField,
+    generate_lawnmower_waypoints,
+)
 
 from app.database import EventStore
-from app.schemas import Alert, Detection, EventIn, Hazard, MissionStatus, RiskScore
-from app.services.risk_scoring import score_detection
-from app.services.safe_route import AStarRoutePlanner, HazardCostZone
+from app.schemas import (
+    Alert,
+    Detection,
+    EventIn,
+    Hazard,
+    MissionStatus,
+    RiskScore,
+    WSEnvelope,
+    WSCommandPayload,
+)
 
 
 class DashboardHub:
@@ -39,40 +79,89 @@ class DashboardHub:
         self.clients: List[WebSocket] = []
         self.loop: Optional[asyncio.AbstractEventLoop] = None
         self.is_link_connected: bool = True
+        self.seq: int = 0
+        self.mission_id: str = "MISSION-AEROSAR-01"
+        self.sim_start_time: float = time.time()
+        self.low_power: bool = False
 
     def register_loop(self, loop: asyncio.AbstractEventLoop):
         self.loop = loop
 
-    async def broadcast_direct(self, message: dict) -> None:
+    def get_sim_time(self) -> float:
+        return round(time.time() - self.sim_start_time, 2)
+
+    def next_seq(self) -> int:
+        self.seq += 1
+        return self.seq
+
+    def build_envelope(self, msg_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Creates version 1 envelope with backward-compatible data field."""
+        seq = self.next_seq()
+        sim_time = self.get_sim_time()
+        return {
+            "v": 1,
+            "type": msg_type,
+            "seq": seq,
+            "sim_time": sim_time,
+            "payload": payload,
+            "data": payload,  # Dual-compatibility for existing UI components
+        }
+
+    async def broadcast_envelope(self, envelope: Dict[str, Any], record_replay: bool = True) -> None:
+        # Replay logging
+        if record_replay:
+            store.record_replay_frame(
+                mission_id=self.mission_id,
+                seq=envelope["seq"],
+                sim_time=envelope["sim_time"],
+                msg_type=envelope["type"],
+                payload=envelope["payload"],
+            )
+
+        # Offline buffering if link cut
+        if not self.is_link_connected:
+            eid = envelope["payload"].get("id") or envelope["payload"].get("alert_id") or f"{envelope['type']}_{envelope['seq']}"
+            store.push_outbox(event_id=eid, event_type=envelope["type"], payload=envelope["payload"])
+            return
+
         if not self.clients:
             return
+
         stale: List[WebSocket] = []
         for client in self.clients:
             try:
-                await client.send_json(message)
+                await client.send_json(envelope)
             except Exception:
                 stale.append(client)
         for s in stale:
             if s in self.clients:
                 self.clients.remove(s)
 
-    def threadsafe_broadcast(self, message: dict) -> None:
+    def threadsafe_broadcast(self, envelope: Dict[str, Any], record_replay: bool = True) -> None:
         if self.loop is not None and not self.loop.is_closed():
-            asyncio.run_coroutine_threadsafe(self.broadcast_direct(message), self.loop)
+            asyncio.run_coroutine_threadsafe(
+                self.broadcast_envelope(envelope, record_replay=record_replay), self.loop
+            )
 
 
-DB_PATH = Path(os.getenv("AEROSAR_DB_PATH", "aerosar.db"))
+# Initialize Database under data/aerosar.db
+data_dir = ROOT_DIR / "data"
+data_dir.mkdir(parents=True, exist_ok=True)
+DB_PATH = data_dir / "aerosar.db"
 store = EventStore(DB_PATH)
 hub = DashboardHub()
 
-# Reference base coordinates (Disaster sim origin: Jaipur)
-BASE_LAT = 26.9124
-BASE_LON = 75.7873
+# Core planners & state machines
+route_planner = AStarPlanner(ref_lat=BASE_LAT, ref_lon=BASE_LON, arena_size_m=30.0, cell_size_m=0.5)
+vehicle_sm = VehicleStateMachine(battery_failsafe_pct=10.0, geofence_max_dist_m=22.0)
+potential_field = ObstaclePotentialField(influence_dist_m=3.5, k_rep=2.0)
 
-# Safe route planner instance
-route_planner = AStarRoutePlanner(ref_lat=BASE_LAT, ref_lon=BASE_LON)
+# Pre-register known static obstacles in 30x30 arena
+potential_field.add_obstacle(-7.0, 6.0, 0.0, radius=2.5)   # Zone A Ruins
+potential_field.add_obstacle(7.0, 7.0, 0.0, radius=3.0)    # Zone B Flood Basin
+potential_field.add_obstacle(6.0, -7.0, 0.0, radius=2.5)   # Zone C Fire Core
 
-# State cache
+# Dynamic State Caches
 latest_pose = {
     "latitude": BASE_LAT,
     "longitude": BASE_LON,
@@ -80,39 +169,37 @@ latest_pose = {
     "heading_deg": 0.0,
     "speed_mps": 0.0,
     "gps_fix": True,
-    "stamp": {"sec": int(time.time()), "nanosec": 0}
-}
-latest_mission_status = {
-    "mission_id": "MISSION-AEROSAR-01",
-    "state": "ACTIVE",
     "battery_percent": 98.5,
-    "coverage_percent": 12.0,
+    "flight_mode": "AUTO_SEARCH",
+    "stamp": {"sec": int(time.time()), "nanosec": 0},
+}
+
+latest_mission_status = {
+    "mission_id": hub.mission_id,
+    "state": "IDLE",
+    "battery_percent": 98.5,
+    "coverage_percent": 0.0,
     "link_connected": True,
-    "nav_mode": "AUTO_SEARCH",
-    "stamp": {"sec": int(time.time()), "nanosec": 0}
+    "nav_mode": "GPS_NAV",
+    "stamp": {"sec": int(time.time()), "nanosec": 0},
 }
 
 
-def event_payload(event: EventIn) -> dict:
-    return event.model_dump(mode="json")
-
-
-def create_event(event_type: str, item: object, event_id: str | None = None) -> EventIn:
+def create_event(event_type: str, item: object, event_id: Optional[str] = None) -> EventIn:
     payload = item.model_dump(mode="json") if hasattr(item, "model_dump") else dict(item)
     eid = event_id or payload.get("id") or payload.get("alert_id") or f"{event_type}_{int(time.time()*1000)}"
     return EventIn(event_id=eid, event_type=event_type, payload=payload)
 
 
-async def store_and_broadcast(event: EventIn, ws_type: str, client_data: dict) -> bool:
-    is_online = hub.is_link_connected
-    created = store.insert(event, synced=is_online)
-    if is_online:
-        await hub.broadcast_direct({"type": ws_type, "data": client_data})
+async def store_and_broadcast(event: EventIn, ws_type: str, payload_data: dict) -> bool:
+    created = store.insert(event, synced=hub.is_link_connected)
+    envelope = hub.build_envelope(ws_type, payload_data)
+    await hub.broadcast_envelope(envelope)
     return created
 
 
 # ==============================================================================
-# ROS 2 Subsystem Integration Seam (Runs in background daemon thread)
+# ROS 2 Subsystem Integration Seam (Optional)
 # ==============================================================================
 ros_node = None
 ros_thread = None
@@ -123,49 +210,32 @@ def init_ros2_bridge():
     try:
         import rclpy
         from rclpy.node import Node
-        from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
         from sensor_msgs.msg import Image, Imu, NavSatFix
-        from aerosar_msgs.msg import Alert as RosAlert, Detection as RosDetection, Hazard as RosHazard, MissionStatus as RosMissionStatus, RiskScore as RosRiskScore
+        from aerosar_msgs.msg import (
+            Alert as RosAlert,
+            Detection as RosDetection,
+            Hazard as RosHazard,
+            MissionStatus as RosMissionStatus,
+            RiskScore as RosRiskScore,
+        )
 
         if not rclpy.ok():
             rclpy.init(args=None)
 
         class Ros2Bridge(Node):
             def __init__(self):
-                super().__init__('aerosar_backend_bridge')
-                self.get_logger().info('ROS 2 AerosarBackendBridgeNode spinning.')
+                super().__init__("aerosar_backend_bridge")
+                self.get_logger().info("ROS 2 AerosarBackendBridgeNode spinning.")
 
-                self.sub_det = self.create_subscription(
-                    RosDetection, '/perception/detection', self.on_detection, 10
-                )
-                self.sub_haz = self.create_subscription(
-                    RosHazard, '/perception/hazard', self.on_hazard, 10
-                )
-                self.sub_status = self.create_subscription(
-                    RosMissionStatus, '/mission/status', self.on_status, 10
-                )
-                self.sub_alert = self.create_subscription(
-                    RosAlert, '/alerts/emergency', self.on_alert, 10
-                )
-                self.sub_gps = self.create_subscription(
-                    NavSatFix, '/gps/fix', self.on_gps, 10
-                )
-                self.sub_imu = self.create_subscription(
-                    Imu, '/imu/data', self.on_imu, 10
-                )
-                self.sub_cam = self.create_subscription(
-                    Image, '/camera/image_raw', self.on_cam, 10
-                )
-                self.sub_thermal = self.create_subscription(
-                    Image, '/thermal/image_raw', self.on_thermal, 10
-                )
+                self.sub_det = self.create_subscription(RosDetection, "/perception/detection", self.on_detection, 10)
+                self.sub_haz = self.create_subscription(RosHazard, "/perception/hazard", self.on_hazard, 10)
+                self.sub_status = self.create_subscription(RosMissionStatus, "/mission/status", self.on_status, 10)
+                self.sub_alert = self.create_subscription(RosAlert, "/alerts/emergency", self.on_alert, 10)
+                self.sub_gps = self.create_subscription(NavSatFix, "/gps/fix", self.on_gps, 10)
+                self.sub_imu = self.create_subscription(Imu, "/imu/data", self.on_imu, 10)
 
-                self.last_cam_time = 0.0
-                self.last_thermal_time = 0.0
-                self.last_gps_time = 0.0
                 self.last_status_time = 0.0
-                self.recent_boxes = []
-                self.known_alerts: dict[str, dict] = {}
+                self.known_alerts: Dict[str, dict] = {}
 
             def on_detection(self, msg: RosDetection):
                 try:
@@ -183,64 +253,49 @@ def init_ros2_bridge():
                         "latitude": lat,
                         "longitude": lon,
                         "altitude": float(msg.altitude) if not math.isnan(msg.altitude) else 1.5,
-                        "stamp": {"sec": int(msg.stamp.sec), "nanosec": int(msg.stamp.nanosec)}
+                        "stamp": {"sec": int(msg.stamp.sec), "nanosec": int(msg.stamp.nanosec)},
                     }
                     det_model = Detection(**det_dict)
-                    event = create_event("detection", det_model, det_model.id)
-                    store.insert(event, synced=hub.is_link_connected)
+                    store.insert(create_event("detection", det_model, det_model.id), synced=hub.is_link_connected)
 
-                    # Compute explainable risk score
-                    hazards = [Hazard.model_validate(r["payload"]) for r in store.list("hazard")]
-                    detections = [Detection.model_validate(r["payload"]) for r in store.list("detection")]
-                    risk = score_detection(det_model, hazards, detections)
-                    risk_event = EventIn(event_id=f"risk-{det_model.id}", event_type="risk_score", payload=risk.model_dump(mode="json"))
-                    store.insert(risk_event, synced=hub.is_link_connected)
+                    # Compute explainable risk score using aerosar_core
+                    hazards = [r["payload"] for r in store.list("hazard")]
+                    detections = [r["payload"] for r in store.list("detection")]
+                    risk_res = core_score_detection(det_dict, hazards, detections)
 
-                    # Compute safe route from base to survivor
-                    path_pts = route_planner.plan_safe_path(BASE_LAT, BASE_LON, lat, lon)
+                    risk_dict = {
+                        "detection_id": risk_res.detection_id,
+                        "score": risk_res.score,
+                        "priority_level": risk_res.priority_level,
+                        "reason": risk_res.reason,
+                        "explain": risk_res.explain,
+                    }
+                    store.insert(EventIn(event_id=f"risk-{risk_res.detection_id}", event_type="risk_score", payload=risk_dict), synced=hub.is_link_connected)
 
-                    if hub.is_link_connected:
-                        hub.threadsafe_broadcast({"type": "detection", "data": det_dict})
-                        hub.threadsafe_broadcast({"type": "risk_score", "data": risk.model_dump(mode="json")})
-                        # Also broadcast ranked priority list
-                        priorities = sorted(store.list("risk_score"), key=lambda r: r["payload"]["score"], reverse=True)
-                        ranked_payload = [p["payload"] for p in priorities]
-                        hub.threadsafe_broadcast({"type": "priority", "data": {"ranked": ranked_payload}})
-                        hub.threadsafe_broadcast({"type": "route", "data": {"survivor_id": det_model.id, "points": path_pts}})
+                    # Safe route calculation
+                    path_pts = route_planner.plan_path(BASE_LAT, BASE_LON, lat, lon)
 
-                        # Lock alert timestamp to initial detection time (never overwrite)
-                        alert_key = f"survivor_{det_model.id}"
-                        already_alerted = False
-                        for k, ex in self.known_alerts.items():
-                            if k.startswith("survivor_"):
-                                d = math.hypot(lat - ex.get("latitude", 0), lon - ex.get("longitude", 0)) * 111320.0
-                                if d < 5.0:
-                                    already_alerted = True
-                                    break
+                    hub.threadsafe_broadcast(hub.build_envelope("detection", det_dict))
+                    hub.threadsafe_broadcast(hub.build_envelope("risk", risk_dict))
+                    hub.threadsafe_broadcast(hub.build_envelope("route", {"survivor_id": det_model.id, "points": path_pts}))
 
-                        if not already_alerted:
-                            alert_dict = {
-                                "alert_id": f"alert-survivor-{len(self.known_alerts) + 1}",
-                                "alert_type": "CRITICAL_PRIORITY" if risk.priority_level == "CRITICAL" else "SURVIVOR_DETECTED",
-                                "message": f"Survivor detected ({risk.priority_level}): {risk.reason}",
-                                "latitude": lat,
-                                "longitude": lon,
-                                "stamp": det_dict["stamp"]
-                            }
-                            self.known_alerts[alert_key] = alert_dict
-                            store.insert(create_event("alert", alert_dict, alert_dict["alert_id"]), synced=hub.is_link_connected)
-                            hub.threadsafe_broadcast({"type": "alert", "data": alert_dict})
+                    # Priority ranking
+                    all_risks = sorted(store.list("risk_score"), key=lambda r: r["payload"]["score"], reverse=True)
+                    hub.threadsafe_broadcast(hub.build_envelope("priority", {"ranked": [r["payload"] for r in all_risks]}))
 
-                        # Track detection bbox for live video feed HUD overlay
-                        lbl = f"SURVIVOR ({int(det_model.confidence * 100)}%)" if not det_model.thermal_confirmed else f"SURVIVOR+HEAT ({int(det_model.confidence * 100)}%)"
-                        self.recent_boxes.append({
-                            "x": float(det_model.bbox_x),
-                            "y": float(det_model.bbox_y),
-                            "w": float(det_model.bbox_w),
-                            "h": float(det_model.bbox_h),
-                            "label": lbl,
-                            "expiry": time.time() + 3.0
-                        })
+                    alert_key = f"survivor_{det_model.id}"
+                    if alert_key not in self.known_alerts:
+                        alert_dict = {
+                            "alert_id": f"alert-survivor-{len(self.known_alerts) + 1}",
+                            "alert_type": "CRITICAL_PRIORITY" if risk_res.priority_level == "CRITICAL" else "SURVIVOR_DETECTED",
+                            "message": f"Survivor detected ({risk_res.priority_level}): {risk_res.reason}",
+                            "latitude": lat,
+                            "longitude": lon,
+                            "stamp": det_dict["stamp"],
+                        }
+                        self.known_alerts[alert_key] = alert_dict
+                        store.insert(create_event("alert", alert_dict, alert_dict["alert_id"]), synced=hub.is_link_connected)
+                        hub.threadsafe_broadcast(hub.build_envelope("alert", alert_dict))
                 except Exception as e:
                     self.get_logger().error(f"Error in on_detection: {e}")
 
@@ -254,167 +309,291 @@ def init_ros2_bridge():
                         "confidence": float(msg.confidence),
                         "latitude": lat,
                         "longitude": lon,
-                        "stamp": {"sec": int(msg.stamp.sec), "nanosec": int(msg.stamp.nanosec)}
+                        "stamp": {"sec": int(msg.stamp.sec), "nanosec": int(msg.stamp.nanosec)},
                     }
-                    haz_model = Hazard(**haz_dict)
-                    event = create_event("hazard", haz_model, haz_model.id)
-                    store.insert(event, synced=hub.is_link_connected)
-
-                    # Register in route planner
-                    route_planner.add_hazard(HazardCostZone(lat=lat, lon=lon, radius_m=8.0, severity=haz_model.confidence))
-
-                    if hub.is_link_connected:
-                        hub.threadsafe_broadcast({"type": "hazard", "data": haz_dict})
-                        # Deduplicate hazard alert by type so timestamp stays fixed at initial discovery
-                        alert_key = f"hazard_{haz_model.hazard_type}"
-                        if alert_key not in self.known_alerts:
-                            alert_dict = {
-                                "alert_id": f"alert-haz-{haz_model.hazard_type}",
-                                "alert_type": "HAZARD_DETECTED",
-                                "message": f"{haz_model.hazard_type.upper()} disaster hazard detected (conf: {haz_model.confidence:.2f})",
-                                "latitude": lat,
-                                "longitude": lon,
-                                "stamp": haz_dict["stamp"]
-                            }
-                            self.known_alerts[alert_key] = alert_dict
-                            store.insert(create_event("alert", alert_dict, alert_dict["alert_id"]), synced=hub.is_link_connected)
-                            hub.threadsafe_broadcast({"type": "alert", "data": alert_dict})
+                    store.insert(create_event("hazard", haz_dict, haz_dict["id"]), synced=hub.is_link_connected)
+                    route_planner.add_hazard(HazardZone(lat=lat, lon=lon, radius_m=3.0, safety_margin_m=1.5))
+                    hub.threadsafe_broadcast(hub.build_envelope("hazard", haz_dict))
                 except Exception as e:
                     self.get_logger().error(f"Error in on_hazard: {e}")
 
             def on_status(self, msg: RosMissionStatus):
-                try:
-                    stat_dict = {
-                        "mission_id": msg.mission_id,
-                        "state": msg.state,
-                        "battery_percent": float(msg.battery_percent),
-                        "coverage_percent": float(msg.coverage_percent),
-                        "link_connected": bool(msg.link_connected),
-                        "nav_mode": "AUTO_SEARCH",
-                        "stamp": {"sec": int(msg.stamp.sec), "nanosec": int(msg.stamp.nanosec)}
-                    }
-                    self.last_status_time = time.time()
-                    global latest_mission_status
-                    latest_mission_status = stat_dict
-                    event = create_event("status", stat_dict, f"status-{msg.mission_id}-{int(time.time())}")
-                    store.insert(event, synced=hub.is_link_connected)
-                    if hub.is_link_connected:
-                        hub.threadsafe_broadcast({"type": "mission_status", "data": stat_dict})
-                except Exception as e:
-                    self.get_logger().error(f"Error in on_status: {e}")
-
-            def on_alert(self, msg: RosAlert):
-                alert_dict = {
-                    "alert_id": msg.alert_id,
-                    "alert_type": msg.alert_type,
-                    "message": msg.message,
-                    "latitude": float(msg.latitude),
-                    "longitude": float(msg.longitude),
-                    "stamp": {"sec": msg.stamp.sec, "nanosec": msg.stamp.nanosec}
+                self.last_status_time = time.time()
+                stat_dict = {
+                    "mission_id": msg.mission_id,
+                    "state": msg.state,
+                    "battery_percent": float(msg.battery_percent),
+                    "coverage_percent": float(msg.coverage_percent),
+                    "link_connected": bool(msg.link_connected),
+                    "nav_mode": "GPS_NAV",
+                    "stamp": {"sec": int(msg.stamp.sec), "nanosec": int(msg.stamp.nanosec)},
                 }
-                if hub.is_link_connected:
-                    hub.threadsafe_broadcast({"type": "alert", "data": alert_dict})
+                global latest_mission_status
+                latest_mission_status = stat_dict
+                hub.threadsafe_broadcast(hub.build_envelope("mission_status", stat_dict))
 
             def on_gps(self, msg: NavSatFix):
-                now = time.time()
-                if (now - self.last_gps_time) < 0.10:  # ~10 Hz rate limit
-                    return
-                self.last_gps_time = now
-
                 lat = float(msg.latitude) if not math.isnan(msg.latitude) else BASE_LAT
                 lon = float(msg.longitude) if not math.isnan(msg.longitude) else BASE_LON
                 alt = float(msg.altitude) if not math.isnan(msg.altitude) else 1.5
-
                 global latest_pose
                 latest_pose["latitude"] = lat
                 latest_pose["longitude"] = lon
                 latest_pose["altitude"] = alt
                 latest_pose["gps_fix"] = not (math.isnan(msg.latitude) or math.isnan(msg.longitude))
-                latest_pose["stamp"] = {"sec": msg.header.stamp.sec, "nanosec": msg.header.stamp.nanosec}
-
-                if hub.is_link_connected:
-                    hub.threadsafe_broadcast({"type": "drone_pose", "data": latest_pose})
+                hub.threadsafe_broadcast(hub.build_envelope("telemetry", latest_pose))
 
             def on_imu(self, msg: Imu):
-                global latest_pose
                 q = msg.orientation
                 siny_cosp = 2 * (q.w * q.z + q.x * q.y)
                 cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
                 yaw_rad = math.atan2(siny_cosp, cosy_cosp)
                 latest_pose["heading_deg"] = round(math.degrees(yaw_rad) % 360, 1)
 
-            def on_cam(self, msg: Image):
-                now = time.time()
-                if (now - self.last_cam_time) < 0.10:  # ~10 Hz for fluid WebSocket video preview
-                    return
-                self.last_cam_time = now
-
-                if not hub.is_link_connected or not hub.clients:
-                    return
-
-                try:
-                    # Convert raw RGB/BGR to JPEG base64
-                    np_arr = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, -1))
-                    if np_arr.shape[2] == 4:
-                        bgr = cv2.cvtColor(np_arr, cv2.COLOR_BGRA2BGR)
-                    elif np_arr.shape[2] == 3:
-                        bgr = cv2.cvtColor(np_arr, cv2.COLOR_RGB2BGR)
-                    else:
-                        bgr = cv2.cvtColor(np_arr, cv2.COLOR_GRAY2BGR)
-
-                    # Downsample slightly for crisp, low-latency socket frame
-                    small = cv2.resize(bgr, (320, 240))
-
-                    # Overlay active survivor bounding boxes
-                    self.recent_boxes = [b for b in self.recent_boxes if b["expiry"] > now]
-                    h_s, w_s = small.shape[:2]
-                    for box in self.recent_boxes:
-                        bx = int(box["x"] * w_s)
-                        by = int(box["y"] * h_s)
-                        bw = max(12, int(box["w"] * w_s))
-                        bh = max(12, int(box["h"] * h_s))
-                        cv2.rectangle(small, (bx, by), (bx + bw, by + bh), (0, 255, 0), 2)
-                        cv2.putText(small, box["label"], (bx, max(12, by - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (0, 255, 0), 1)
-
-                    _, buf = cv2.imencode('.jpg', small, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
-                    b64 = base64.b64encode(buf).decode('utf-8')
-                    hub.threadsafe_broadcast({"type": "video_frame", "data": {"channel": "rgb", "jpeg_base64": b64}})
-                except Exception:
-                    pass
-
-            def on_thermal(self, msg: Image):
-                now = time.time()
-                if (now - self.last_thermal_time) < 0.20:  # ~5 Hz for thermal feed
-                    return
-                self.last_thermal_time = now
-
-                if not hub.is_link_connected or not hub.clients:
-                    return
-
-                try:
-                    np_arr = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, -1))
-                    if np_arr.shape[2] == 4:
-                        bgr = cv2.cvtColor(np_arr, cv2.COLOR_BGRA2BGR)
-                    elif np_arr.shape[2] == 3:
-                        bgr = cv2.cvtColor(np_arr, cv2.COLOR_RGB2BGR)
-                    else:
-                        bgr = cv2.cvtColor(np_arr, cv2.COLOR_GRAY2BGR)
-
-                    gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
-                    thermal_colored = cv2.applyColorMap(gray, cv2.COLORMAP_INFERNO)
-                    small = cv2.resize(thermal_colored, (320, 240))
-                    _, buf = cv2.imencode('.jpg', small, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
-                    b64 = base64.b64encode(buf).decode('utf-8')
-                    hub.threadsafe_broadcast({"type": "video_frame", "data": {"channel": "thermal", "jpeg_base64": b64}})
-                except Exception:
-                    pass
-
         ros_node = Ros2Bridge()
         ros_thread = threading.Thread(target=lambda: rclpy.spin(ros_node), daemon=True)
         ros_thread.start()
         print("[BACKEND] ROS 2 Backend Bridge Node running in background thread.")
     except Exception as e:
-        print(f"[BACKEND] ROS 2 initialization skipped or running standalone: {e}")
+        print(f"[BACKEND] Running in STANDALONE mode (ROS 2 inactive: {e})")
+
+
+# ==============================================================================
+# Standalone Simulation Engine (Runs if ROS 2 is not present)
+# ==============================================================================
+class StandaloneSimulator:
+    def __init__(self):
+        self.running: bool = False
+        self.task: Optional[asyncio.Task] = None
+        self.sim_time: float = 0.0
+
+        # Lawnmower flight path waypoints in 30x30m arena
+        raw_waypoints = generate_lawnmower_waypoints(
+            x_min=-11.0, x_max=11.0, y_min=-11.0, y_max=11.0, altitude=2.2, lane_spacing=4.5
+        )
+        self.bspline = UniformCubicBSpline(raw_waypoints)
+        self.progress_u: float = 0.0
+
+        # Scenario victims & hazards
+        self.staged_hazards = [
+            {"id": "haz-ruins-01", "hazard_type": "damaged_structure", "confidence": 0.90, "enu": (-7.0, 6.0)},
+            {"id": "haz-flood-01", "hazard_type": "flood", "confidence": 0.95, "enu": (7.0, 7.0)},
+            {"id": "haz-fire-01", "hazard_type": "fire", "confidence": 0.98, "enu": (6.0, -7.0)},
+        ]
+        self.staged_victims = [
+            {"id": "victim_1", "confidence": 0.50, "thermal": False, "enu": (-6.8, 6.2), "desc": "Collapsed Ruins Victim"},
+            {"id": "victim_2", "confidence": 0.52, "thermal": False, "enu": (7.2, 6.8), "desc": "Flooded Basin Survivor"},
+            {"id": "victim_3", "confidence": 0.88, "thermal": True, "enu": (5.5, -6.8), "desc": "Fire Zone Critical Survivor"},
+        ]
+        self.triggered_hazards = set()
+        self.triggered_victims = set()
+
+    def start(self):
+        if not self.running:
+            self.running = True
+            vehicle_sm.arm()
+            vehicle_sm.start_flight()
+            latest_mission_status["state"] = "SEARCHING"
+
+    def pause(self):
+        latest_mission_status["state"] = "PAUSED"
+
+    def resume(self):
+        latest_mission_status["state"] = "SEARCHING"
+
+    def rtl(self):
+        vehicle_sm.return_to_launch()
+        latest_mission_status["state"] = "RETURNING"
+
+    def emergency_land(self):
+        vehicle_sm.transition_to(VehicleState.EMERGENCY_LAND, command="emergency_land")
+        latest_mission_status["state"] = "EMERGENCY_LAND"
+
+
+sim_engine = StandaloneSimulator()
+
+
+async def standalone_sim_loop():
+    """High-frequency (30 Hz / 15 Hz) simulation update loop."""
+    print("[BACKEND] Standalone Simulation Engine initialized.")
+    last_hb_time = 0.0
+    start_wall_time = time.time()
+
+    while True:
+        try:
+            rate_hz = 15.0 if hub.low_power else 30.0
+            dt = 1.0 / rate_hz
+            await asyncio.sleep(dt)
+
+            sim_time = time.time() - start_wall_time
+            sim_engine.sim_time = sim_time
+
+            # Update drone position along B-spline if in flight
+            state = vehicle_sm.state
+            if state == VehicleState.IN_FLIGHT and latest_mission_status["state"] == "SEARCHING":
+                sim_engine.progress_u = min(1.0, sim_engine.progress_u + (dt * 0.015))
+                # Evaluate spline position
+                x, y, z = sim_engine.bspline.evaluate(sim_engine.progress_u)
+
+                # Add local reactive repulsive avoidance force
+                rfx, rfy, rfz = potential_field.compute_repulsive_force((x, y, z))
+                x += rfx * 0.3
+                y += rfy * 0.3
+                z += rfz * 0.3
+
+                # Calculate heading
+                next_x, next_y, _ = sim_engine.bspline.evaluate(min(1.0, sim_engine.progress_u + 0.005))
+                heading_rad = math.atan2(next_x - x, next_y - y)
+                heading_deg = (math.degrees(heading_rad) + 360.0) % 360.0
+
+                plat, plon, palt = enu_to_geodetic(x, y, z)
+
+                # Battery drain model
+                latest_pose["battery_percent"] = max(5.0, round(98.5 - (sim_time * 0.12), 1))
+                latest_mission_status["battery_percent"] = latest_pose["battery_percent"]
+                latest_mission_status["coverage_percent"] = round(sim_engine.progress_u * 100.0, 1)
+
+                latest_pose["latitude"] = round(plat, 7)
+                latest_pose["longitude"] = round(plon, 7)
+                latest_pose["altitude"] = round(z, 2)
+                latest_pose["heading_deg"] = round(heading_deg, 1)
+                latest_pose["speed_mps"] = 1.2
+                latest_pose["stamp"] = {"sec": int(sim_time), "nanosec": int((sim_time % 1) * 1e9)}
+
+                # Broadcast telemetry
+                await hub.broadcast_envelope(hub.build_envelope("telemetry", latest_pose))
+
+                # Check proximity triggers for staged hazards
+                for haz in sim_engine.staged_hazards:
+                    if haz["id"] not in sim_engine.triggered_hazards:
+                        hx, hy = haz["enu"]
+                        dist = math.hypot(x - hx, y - hy)
+                        if dist <= 5.0:  # Sensor FOV threshold
+                            sim_engine.triggered_hazards.add(haz["id"])
+                            hlat, hlon, _ = enu_to_geodetic(hx, hy)
+                            haz_dict = {
+                                "id": haz["id"],
+                                "hazard_type": haz["hazard_type"],
+                                "confidence": haz["confidence"],
+                                "latitude": round(hlat, 7),
+                                "longitude": round(hlon, 7),
+                                "radius_m": 8.0,
+                                "stamp": latest_pose["stamp"],
+                            }
+                            store.insert(create_event("hazard", haz_dict, haz["id"]), synced=hub.is_link_connected)
+                            route_planner.add_hazard(HazardZone(lat=hlat, lon=hlon, radius_m=3.0, safety_margin_m=1.5))
+                            await hub.broadcast_envelope(hub.build_envelope("hazard", haz_dict))
+
+                            alert_dict = {
+                                "alert_id": f"alert-{haz['id']}",
+                                "alert_type": "HAZARD_DETECTED",
+                                "message": f"{haz['hazard_type'].upper()} hazard classified in sector",
+                                "latitude": round(hlat, 7),
+                                "longitude": round(hlon, 7),
+                                "stamp": latest_pose["stamp"],
+                            }
+                            store.insert(create_event("alert", alert_dict, alert_dict["alert_id"]), synced=hub.is_link_connected)
+                            await hub.broadcast_envelope(hub.build_envelope("alert", alert_dict))
+
+                # Check proximity triggers for staged victims
+                for vic in sim_engine.staged_victims:
+                    if vic["id"] not in sim_engine.triggered_victims:
+                        vx, vy = vic["enu"]
+                        dist = math.hypot(x - vx, y - vy)
+                        if dist <= 4.0:
+                            sim_engine.triggered_victims.add(vic["id"])
+                            vlat, vlon, _ = enu_to_geodetic(vx, vy)
+                            det_dict = {
+                                "id": vic["id"],
+                                "detection_type": "person",
+                                "confidence": vic["confidence"],
+                                "bbox_x": 0.45,
+                                "bbox_y": 0.45,
+                                "bbox_w": 0.10,
+                                "bbox_h": 0.15,
+                                "thermal_confirmed": vic["thermal"],
+                                "latitude": round(vlat, 7),
+                                "longitude": round(vlon, 7),
+                                "altitude": 0.0,
+                                "stamp": latest_pose["stamp"],
+                            }
+                            store.insert(create_event("detection", det_dict, vic["id"]), synced=hub.is_link_connected)
+                            await hub.broadcast_envelope(hub.build_envelope("detection", det_dict))
+
+                            # Score detection using pure-Python risk engine
+                            hazards = [r["payload"] for r in store.list("hazard")]
+                            detections = [r["payload"] for r in store.list("detection")]
+                            risk_res = core_score_detection(det_dict, hazards, detections)
+
+                            risk_dict = {
+                                "detection_id": risk_res.detection_id,
+                                "score": risk_res.score,
+                                "priority_level": risk_res.priority_level,
+                                "reason": risk_res.reason,
+                                "explain": risk_res.explain,
+                            }
+                            store.insert(EventIn(event_id=f"risk-{vic['id']}", event_type="risk_score", payload=risk_dict), synced=hub.is_link_connected)
+                            await hub.broadcast_envelope(hub.build_envelope("risk", risk_dict))
+
+                            # Priority ranking
+                            all_risks = sorted(store.list("risk_score"), key=lambda r: r["payload"]["score"], reverse=True)
+                            await hub.broadcast_envelope(hub.build_envelope("priority", {"ranked": [r["payload"] for r in all_risks]}))
+
+                            # Safe route
+                            safe_path = route_planner.plan_path(BASE_LAT, BASE_LON, vlat, vlon)
+                            await hub.broadcast_envelope(hub.build_envelope("route", {"survivor_id": vic["id"], "points": safe_path}))
+
+                            # Alert dispatch
+                            alert_type = "CRITICAL_PRIORITY" if risk_res.priority_level == "CRITICAL" else "SURVIVOR_DETECTED"
+                            alert_dict = {
+                                "alert_id": f"alert-{vic['id']}",
+                                "alert_type": alert_type,
+                                "message": f"{vic['desc']} ({risk_res.priority_level}): {risk_res.reason}",
+                                "latitude": round(vlat, 7),
+                                "longitude": round(vlon, 7),
+                                "stamp": latest_pose["stamp"],
+                            }
+                            store.insert(create_event("alert", alert_dict, alert_dict["alert_id"]), synced=hub.is_link_connected)
+                            await hub.broadcast_envelope(hub.build_envelope("alert", alert_dict))
+
+                # Check failsafes (battery < 10% or geofence)
+                dist_origin = math.hypot(x, y)
+                report = vehicle_sm.check_failsafes(
+                    battery_pct=latest_pose["battery_percent"],
+                    dist_from_origin_m=dist_origin,
+                    sim_time=sim_time,
+                )
+                if report:
+                    store.save_safety_report(report.to_dict())
+                    alert_dict = {
+                        "alert_id": f"alert-{report.id}",
+                        "alert_type": "FAILSAFE",
+                        "message": f"Failsafe triggered [{report.trigger}]: {report.outcome}",
+                        "latitude": round(plat, 7),
+                        "longitude": round(plon, 7),
+                        "stamp": latest_pose["stamp"],
+                    }
+                    store.insert(create_event("alert", alert_dict, alert_dict["alert_id"]), synced=hub.is_link_connected)
+                    await hub.broadcast_envelope(hub.build_envelope("alert", alert_dict))
+
+            # 1 Hz Heartbeat dispatch
+            if (sim_time - last_hb_time) >= 1.0:
+                last_hb_time = sim_time
+                hb = vehicle_sm.generate_heartbeat(
+                    battery_pct=latest_pose["battery_percent"],
+                    link_connected=hub.is_link_connected,
+                    nav_mode=latest_mission_status["nav_mode"],
+                )
+                await hub.broadcast_envelope(hub.build_envelope("heartbeat", hb))
+
+                latest_mission_status["stamp"] = latest_pose["stamp"]
+                await hub.broadcast_envelope(hub.build_envelope("mission_status", latest_mission_status))
+
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            print(f"[BACKEND SIM ERROR]: {e}")
+            await asyncio.sleep(0.5)
 
 
 # ==============================================================================
@@ -426,27 +605,9 @@ async def lifespan(_: FastAPI):
     hub.register_loop(loop)
     init_ros2_bridge()
 
-    async def heartbeat_worker():
-        while True:
-            try:
-                await asyncio.sleep(1.0)
-                # Only broadcast synthetic fallback if no status received from drone in 3s
-                bridge_status_age = (time.time() - ros_node.last_status_time) if (ros_node and hasattr(ros_node, 'last_status_time')) else 999.0
-                if bridge_status_age > 3.0 and hub.is_link_connected and hub.clients:
-                    # Update heartbeat timestamp fallback
-                    latest_mission_status["stamp"] = {
-                        "sec": int(time.time()),
-                        "nanosec": 0
-                    }
-                    await hub.broadcast_direct({"type": "mission_status", "data": latest_mission_status})
-            except asyncio.CancelledError:
-                break
-            except Exception:
-                pass
-
-    hb_task = asyncio.create_task(heartbeat_worker())
+    sim_task = asyncio.create_task(standalone_sim_loop())
     yield
-    hb_task.cancel()
+    sim_task.cancel()
     if ros_node is not None:
         try:
             ros_node.destroy_node()
@@ -466,14 +627,36 @@ app.add_middleware(
 
 
 @app.get("/health")
+@app.get("/api/health")
 def health() -> dict:
+    mode = "ros2" if ros_node is not None else "standalone"
     return {
         "status": "ok",
         "service": "aerosar-backend",
+        "mode": mode,
         "ros2_active": ros_node is not None,
         "clients_connected": len(hub.clients),
         "link_connected": hub.is_link_connected,
+        "database": str(DB_PATH),
     }
+
+
+@app.get("/api/missions")
+def list_missions() -> list[dict]:
+    return store.list_missions()
+
+
+@app.get("/api/missions/{mission_id}/replay")
+def get_mission_replay(mission_id: str) -> list[dict]:
+    frames = store.get_mission_replay(mission_id)
+    if not frames:
+        raise HTTPException(status_code=404, detail=f"Mission '{mission_id}' not found in replay storage")
+    return frames
+
+
+@app.get("/api/safety_reports")
+def list_safety_reports() -> list[dict]:
+    return store.list_safety_reports()
 
 
 @app.get("/api/events")
@@ -498,9 +681,6 @@ def get_priorities() -> list[dict]:
 
 @app.get("/api/mission/status")
 def get_mission_status() -> dict:
-    statuses = store.list("status")
-    if statuses:
-        return statuses[-1]["payload"]
     return latest_mission_status
 
 
@@ -511,7 +691,7 @@ def get_sync_status() -> dict:
 
 @app.post("/api/events")
 async def ingest_event(event: EventIn) -> dict:
-    created = await store_and_broadcast(event, f"{event.event_type}", event.payload)
+    created = await store_and_broadcast(event, event.event_type, event.payload)
     return {"event_id": event.event_id, "created": created}
 
 
@@ -519,15 +699,15 @@ async def ingest_event(event: EventIn) -> dict:
 async def add_hazard(hazard: Hazard) -> dict:
     event = create_event("hazard", hazard, hazard.id)
     await store_and_broadcast(event, "hazard", hazard.model_dump(mode="json"))
-    route_planner.add_hazard(HazardCostZone(lat=hazard.latitude, lon=hazard.longitude, severity=hazard.confidence))
+    route_planner.add_hazard(HazardZone(lat=hazard.latitude, lon=hazard.longitude, radius_m=hazard.radius_m))
     alert = Alert(
         alert_type="HAZARD_DETECTED",
-        message=f"{hazard.hazard_type.upper()} detected",
+        message=f"{hazard.hazard_type.upper()} disaster hazard detected",
         latitude=hazard.latitude,
         longitude=hazard.longitude,
     )
     await store_and_broadcast(create_event("alert", alert, alert.alert_id), "alert", alert.model_dump(mode="json"))
-    return event_payload(event)
+    return event.model_dump(mode="json")
 
 
 @app.post("/api/detections")
@@ -535,55 +715,59 @@ async def add_detection(detection: Detection) -> dict:
     event = create_event("detection", detection, detection.id)
     await store_and_broadcast(event, "detection", detection.model_dump(mode="json"))
 
-    hazards = [Hazard.model_validate(row["payload"]) for row in store.list("hazard")]
-    detections = [Detection.model_validate(row["payload"]) for row in store.list("detection")]
-    risk = score_detection(detection, hazards, detections)
-    risk_event = EventIn(event_id=f"risk-{detection.id}", event_type="risk_score", payload=risk.model_dump(mode="json"))
-    await store_and_broadcast(risk_event, "risk_score", risk.model_dump(mode="json"))
+    hazards = [row["payload"] for row in store.list("hazard")]
+    detections = [row["payload"] for row in store.list("detection")]
+    risk_res = core_score_detection(detection.model_dump(mode="json"), hazards, detections)
 
-    # Priority ranking broadcast
-    priorities = sorted(store.list("risk_score"), key=lambda r: r["payload"]["score"], reverse=True)
-    await hub.broadcast_direct({"type": "priority", "data": {"ranked": [p["payload"] for p in priorities]}})
+    risk_dict = {
+        "detection_id": risk_res.detection_id,
+        "score": risk_res.score,
+        "priority_level": risk_res.priority_level,
+        "reason": risk_res.reason,
+        "explain": risk_res.explain,
+    }
+    risk_event = EventIn(event_id=f"risk-{detection.id}", event_type="risk_score", payload=risk_dict)
+    await store_and_broadcast(risk_event, "risk", risk_dict)
 
     # Safe Route
-    path = route_planner.plan_safe_path(BASE_LAT, BASE_LON, detection.latitude, detection.longitude)
-    await hub.broadcast_direct({"type": "route", "data": {"survivor_id": detection.id, "points": path}})
+    path = route_planner.plan_path(BASE_LAT, BASE_LON, detection.latitude, detection.longitude)
+    await hub.broadcast_envelope(hub.build_envelope("route", {"survivor_id": detection.id, "points": path}))
 
+    alert_type = "CRITICAL_PRIORITY" if risk_res.priority_level == "CRITICAL" else "SURVIVOR_DETECTED"
     alert = Alert(
-        alert_type="CRITICAL_PRIORITY" if risk.priority_level == "CRITICAL" else "SURVIVOR_DETECTED",
-        message=f"Survivor detected: {risk.reason}",
+        alert_type=alert_type,
+        message=f"Survivor detected: {risk_res.reason}",
         latitude=detection.latitude,
         longitude=detection.longitude,
     )
     await store_and_broadcast(create_event("alert", alert, alert.alert_id), "alert", alert.model_dump(mode="json"))
-    return {"detection": event_payload(event), "risk_score": risk.model_dump(mode="json"), "route": path}
+    return {"detection": event.model_dump(mode="json"), "risk_score": risk_dict, "route": path}
 
 
 @app.post("/api/mission/start")
 async def mission_start() -> dict:
-    global latest_mission_status
-    latest_mission_status["state"] = "ACTIVE"
-    event = create_event("status", latest_mission_status, f"status-start-{int(time.time())}")
-    await store_and_broadcast(event, "mission_status", latest_mission_status)
+    sim_engine.start()
+    latest_mission_status["state"] = "SEARCHING"
+    await hub.broadcast_envelope(hub.build_envelope("mission_status", latest_mission_status))
     return {"success": True, "message": "Mission started successfully"}
 
 
 @app.post("/api/mission/abort")
 async def mission_abort() -> dict:
-    global latest_mission_status
-    latest_mission_status["state"] = "ABORTING"
-    event = create_event("status", latest_mission_status, f"status-abort-{int(time.time())}")
-    await store_and_broadcast(event, "mission_status", latest_mission_status)
-    return {"success": True, "message": "Mission abort initiated — returning to base"}
+    sim_engine.rtl()
+    latest_mission_status["state"] = "RETURNING"
+    await hub.broadcast_envelope(hub.build_envelope("mission_status", latest_mission_status))
+    return {"success": True, "message": "Mission abort initiated — returning to launch"}
 
 
 @app.post("/api/debug/link/cut")
 async def debug_link_cut() -> dict:
     hub.is_link_connected = False
     latest_mission_status["link_connected"] = False
-    await hub.broadcast_direct({"type": "sync_status", "data": store.get_sync_status(is_online=False)})
+    link_state = store.get_sync_status(is_online=False)
+    await hub.broadcast_envelope(hub.build_envelope("link_state", link_state))
     alert = Alert(alert_type="LINK_LOST", message="OFFLINE — logging locally to SQLite buffer")
-    await store_and_broadcast(create_event("alert", alert, alert.alert_id), "alert", alert.model_dump(mode="json"))
+    store.insert(create_event("alert", alert, alert.alert_id), synced=False)
     return {"success": True, "link_connected": False}
 
 
@@ -591,12 +775,59 @@ async def debug_link_cut() -> dict:
 async def debug_link_restore() -> dict:
     hub.is_link_connected = True
     latest_mission_status["link_connected"] = True
-    synced_count = store.mark_all_synced()
-    await hub.broadcast_direct({"type": "sync_status", "data": {"state": "SYNCING", "synced_events": synced_count}})
-    await hub.broadcast_direct({"type": "sync_status", "data": {"state": "CONNECTED", "synced_events": synced_count}})
+
+    # Flush outbox in order and deduplicate
+    flushed_items = store.flush_outbox()
+    synced_count = len(flushed_items)
+
+    for item in flushed_items:
+        # Re-broadcast flushed items to online clients
+        await hub.broadcast_envelope(hub.build_envelope(item["event_type"], item["payload"]))
+
+    store.mark_all_synced()
+    link_state = {"state": "CONNECTED", "queued_events": 0, "synced_events": synced_count}
+    await hub.broadcast_envelope(hub.build_envelope("link_state", link_state))
+
     alert = Alert(alert_type="LINK_RESTORED", message=f"Link restored; {synced_count} queued events synchronized")
     await store_and_broadcast(create_event("alert", alert, alert.alert_id), "alert", alert.model_dump(mode="json"))
     return {"success": True, "link_connected": True, "synced_events": synced_count}
+
+
+# Optional YOLO CPU inference endpoint
+@app.post("/api/detect")
+async def detect_frame(payload: Dict[str, Any]) -> dict:
+    """
+    Runs YOLOv8n inference if ultralytics is installed;
+    falls back gracefully to synthetic detection if missing.
+    """
+    b64_data = payload.get("image_base64", "")
+    if not b64_data:
+        return {"mode": "synthetic", "detections": []}
+
+    try:
+        from ultralytics import YOLO
+        # Initialize nano model
+        model = YOLO("yolov8n.pt")
+        img_bytes = base64.b64decode(b64_data.split(",")[-1])
+        np_arr = np.frombuffer(img_bytes, np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
+        results = model(img, conf=0.35, verbose=False)
+        detections = []
+        for r in results:
+            for box in r.boxes:
+                cls_id = int(box.cls[0])
+                cls_name = model.names[cls_id]
+                if cls_name == "person":
+                    xyxy = box.xyxy[0].tolist()
+                    detections.append({
+                        "class": "person",
+                        "confidence": round(float(box.conf[0]), 2),
+                        "bbox": xyxy,
+                    })
+        return {"mode": "yolo", "detections": detections}
+    except Exception as e:
+        return {"mode": "synthetic", "fallback": True, "reason": str(e), "detections": []}
 
 
 # ==============================================================================
@@ -606,36 +837,103 @@ async def handle_websocket(websocket: WebSocket):
     await websocket.accept()
     hub.clients.append(websocket)
 
-    # 1. Send immediate sync status
-    await websocket.send_json({"type": "sync_status", "data": store.get_sync_status(is_online=hub.is_link_connected)})
+    async def send_init_envelope(msg_type: str, payload: dict):
+        env = hub.build_envelope(msg_type, payload)
+        store.record_replay_frame(
+            mission_id=hub.mission_id,
+            seq=env["seq"],
+            sim_time=env["sim_time"],
+            msg_type=env["type"],
+            payload=env["payload"],
+        )
+        await websocket.send_json(env)
 
-    # 2. Replay all buffered detections & hazards
-    events = store.list()
-    batch_frames = []
-    for ev in events:
-        etype = ev["event_type"]
-        if etype in ("detection", "hazard", "risk_score", "alert", "status"):
-            ws_type = "mission_status" if etype == "status" else etype
-            batch_frames.append({"type": ws_type, "data": ev["payload"]})
+    # 1. Immediate link state
+    sync_status = store.get_sync_status(is_online=hub.is_link_connected)
+    await send_init_envelope("link_state", sync_status)
 
-    if batch_frames:
-        await websocket.send_json({"type": "batch", "data": batch_frames})
+    # 2. Replay all active buffered detections, hazards, alerts
+    for h in store.list("hazard"):
+        await send_init_envelope("hazard", h["payload"])
+    for d in store.list("detection"):
+        await send_init_envelope("detection", d["payload"])
+    for r in store.list("risk_score"):
+        await send_init_envelope("risk", r["payload"])
+    for a in store.list("alert"):
+        await send_init_envelope("alert", a["payload"])
 
-    # 3. Send current drone pose and mission status
-    await websocket.send_json({"type": "mission_status", "data": latest_mission_status})
-    await websocket.send_json({"type": "drone_pose", "data": latest_pose})
+    # 3. Current telemetry and status
+    await send_init_envelope("telemetry", latest_pose)
+    await send_init_envelope("mission_status", latest_mission_status)
 
     try:
         while True:
-            # Handle incoming client commands or ping frames
             text = await websocket.receive_text()
             try:
                 data = json.loads(text)
-                if data.get("action") == "sync":
-                    synced = store.mark_all_synced()
-                    await websocket.send_json({"type": "sync_status", "data": {"state": "CONNECTED", "synced_events": synced}})
             except Exception:
-                pass
+                await websocket.send_json({"error": "Invalid JSON format"})
+                continue
+
+            # Validate version v if envelope received
+            if "v" in data:
+                if data.get("v") != 1:
+                    await websocket.send_json({
+                        "error": "Unsupported protocol version",
+                        "received_version": data.get("v"),
+                        "supported_version": 1,
+                    })
+                    continue
+
+            # Handle client commands
+            cmd_action = None
+            cmd_params = {}
+
+            if data.get("type") == "cmd":
+                payload = data.get("payload", {})
+                cmd_action = payload.get("action")
+                cmd_params = payload.get("params", {})
+            elif "action" in data:  # Direct command
+                cmd_action = data.get("action")
+                cmd_params = data.get("params", {})
+
+            if cmd_action == "start":
+                sim_engine.start()
+            elif cmd_action == "pause":
+                sim_engine.pause()
+            elif cmd_action == "resume":
+                sim_engine.resume()
+            elif cmd_action == "rtl":
+                sim_engine.rtl()
+            elif cmd_action == "arm":
+                vehicle_sm.arm()
+            elif cmd_action == "disarm":
+                vehicle_sm.disarm()
+            elif cmd_action == "emergency_land":
+                sim_engine.emergency_land()
+            elif cmd_action == "link_cut":
+                hub.is_link_connected = False
+                latest_mission_status["link_connected"] = False
+                await websocket.send_json(hub.build_envelope("link_state", store.get_sync_status(is_online=False)))
+            elif cmd_action == "link_restore":
+                hub.is_link_connected = True
+                latest_mission_status["link_connected"] = True
+                flushed = store.flush_outbox()
+                for item in flushed:
+                    await hub.broadcast_envelope(hub.build_envelope(item["event_type"], item["payload"]))
+                store.mark_all_synced()
+                await hub.broadcast_envelope(hub.build_envelope("link_state", {"state": "CONNECTED", "queued_events": 0, "synced_events": len(flushed)}))
+            elif cmd_action == "set_mode":
+                if "low_power" in cmd_params:
+                    hub.low_power = bool(cmd_params["low_power"])
+                if "mode" in cmd_params:
+                    latest_mission_status["nav_mode"] = cmd_params["mode"]
+            elif cmd_action == "sync":
+                synced = store.mark_all_synced()
+                await websocket.send_json(hub.build_envelope("link_state", {"state": "CONNECTED", "queued_events": 0, "synced_events": synced}))
+            elif cmd_action == "fast_forward":
+                sim_engine.progress_u = float(cmd_params.get("progress", 0.23))
+
     except WebSocketDisconnect:
         if websocket in hub.clients:
             hub.clients.remove(websocket)

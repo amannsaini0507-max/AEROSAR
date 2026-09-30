@@ -1,13 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { MissionModel } from '../types';
 import { formatClock } from '../lib/time';
 
 type Channel = 'rgb' | 'thermal';
 
 /**
- * Live drone feed with RGB / thermal toggle (§14.2, demo beat 2:00–2:45).
- * Source priority per channel: pushed JPEG frame → stream URL (MJPEG/HTTP) →
- * simulator illustration (simulator only) → "no signal".
+ * Live drone feed with RGB / thermal toggle.
+ * Uses 100% Canvas rendering (Zero SVG compliance).
  */
 export default function VideoFeed({ model, linkOffline = false }: { model: MissionModel; linkOffline?: boolean }) {
   const [channel, setChannel] = useState<Channel>('rgb');
@@ -46,12 +45,10 @@ export default function VideoFeed({ model, linkOffline = false }: { model: Missi
           {src ? (
             <img className="video-frame__img" src={src} alt={`${channel === 'rgb' ? 'RGB' : 'Thermal'} camera feed`} />
           ) : showSim ? (
-            <SimulatedScene channel={channel} heading={pose?.heading ?? 0} />
+            <SimulatedCanvasScene channel={channel} heading={pose?.heading ?? 0} />
           ) : (
             <div className="video-frame__placeholder">
-              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M2 3l19 19M17 10.5l4-3v9l-4-3M14 6H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+              <CameraPlaceholderCanvas channel={channel} />
               <span>No {channel === 'rgb' ? 'RGB' : 'thermal'} stream yet</span>
             </div>
           )}
@@ -85,37 +82,79 @@ export default function VideoFeed({ model, linkOffline = false }: { model: Missi
   );
 }
 
-/** Lightweight illustrative scene so the RGB/thermal toggle can be rehearsed without a stream. */
-function SimulatedScene({ channel, heading }: { channel: Channel; heading: number }) {
-  const thermal = channel === 'thermal';
-  const drift = (heading % 90) / 90;
-  return (
-    <svg className="video-frame__sim" viewBox="0 0 320 180" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-      <defs>
-        <radialGradient id="heat" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#fff6a8" />
-          <stop offset="35%" stopColor="#ffb13b" />
-          <stop offset="70%" stopColor="#e5484d" />
-          <stop offset="100%" stopColor="#e5484d" stopOpacity="0" />
-        </radialGradient>
-      </defs>
-      <rect width="320" height="180" fill={thermal ? '#1a1033' : '#6f7f5e'} />
-      <g transform={`translate(${-20 * drift} 0)`}>
-        {[0, 1, 2, 3, 4].map((i) => (
-          <rect
-            key={i}
-            x={20 + i * 70}
-            y={30 + (i % 2) * 60}
-            width="44"
-            height="34"
-            fill={thermal ? '#2c1f55' : '#8d8a7c'}
-            opacity="0.9"
-          />
-        ))}
-        <circle cx="210" cy="112" r={thermal ? 26 : 9} fill={thermal ? 'url(#heat)' : '#d9a25b'} />
-        {!thermal && <rect x="203" y="120" width="14" height="6" fill="#3b4a6b" />}
-        <rect x="190" y="90" width="42" height="46" fill="none" stroke={thermal ? '#ffffff' : '#f07b1f'} strokeWidth="1.5" strokeDasharray="4 3" />
-      </g>
-    </svg>
-  );
+function CameraPlaceholderCanvas({ channel }: { channel: Channel }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, 30, 30);
+    ctx.strokeStyle = '#8a8f98';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(3, 8, 20, 14);
+    ctx.beginPath();
+    ctx.arc(13, 15, 4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeRect(8, 5, 6, 3);
+  }, [channel]);
+
+  return <canvas ref={canvasRef} width={30} height={30} aria-hidden="true" />;
+}
+
+function SimulatedCanvasScene({ channel, heading }: { channel: Channel; heading: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const thermal = channel === 'thermal';
+    const drift = ((heading % 90) / 90) * 20;
+
+    // Background
+    ctx.fillStyle = thermal ? '#1a1033' : '#6f7f5e';
+    ctx.fillRect(0, 0, 320, 180);
+
+    ctx.save();
+    ctx.translate(-drift, 0);
+
+    // Hazard & Obstacle Blocks
+    for (let i = 0; i < 5; i++) {
+      ctx.fillStyle = thermal ? '#2c1f55' : '#8d8a7c';
+      ctx.fillRect(20 + i * 70, 30 + (i % 2) * 60, 44, 34);
+    }
+
+    // Survivor / Heat Source
+    if (thermal) {
+      const grad = ctx.createRadialGradient(210, 112, 0, 210, 112, 26);
+      grad.addColorStop(0, '#fff6a8');
+      grad.addColorStop(0.35, '#ffb13b');
+      grad.addColorStop(0.7, '#e5484d');
+      grad.addColorStop(1, 'rgba(229, 72, 77, 0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(210, 112, 26, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = '#d9a25b';
+      ctx.beginPath();
+      ctx.arc(210, 112, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#3b4a6b';
+      ctx.fillRect(203, 120, 14, 6);
+    }
+
+    // Detection box
+    ctx.strokeStyle = thermal ? '#ffffff' : '#f07b1f';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeRect(190, 90, 42, 46);
+
+    ctx.restore();
+  }, [channel, heading]);
+
+  return <canvas ref={canvasRef} width={320} height={180} className="video-frame__sim" aria-hidden="true" />;
 }

@@ -103,6 +103,7 @@ function applyOne(model: MissionModel, msg: ServerMessage, now: number): Mission
         }
       };
     }
+    case 'risk':
     case 'risk_score': {
       const risk = toRisk(msg.data);
       if (!risk) return model;
@@ -168,6 +169,7 @@ function applyOne(model: MissionModel, msg: ServerMessage, now: number): Mission
         }
       };
     }
+    case 'telemetry':
     case 'drone_pose': {
       const p = msg.data;
       if (typeof p.latitude !== 'number' || typeof p.longitude !== 'number') return model;
@@ -186,6 +188,7 @@ function applyOne(model: MissionModel, msg: ServerMessage, now: number): Mission
         track: [...model.track, point].slice(-MAX_TRACK_POINTS)
       };
     }
+    case 'link_state':
     case 'sync_status':
       return { ...model, sync: msg.data };
     case 'route':
@@ -222,7 +225,12 @@ export function parseFrame(raw: unknown): ServerMessage | null {
   if (typeof raw !== 'string') return null;
   try {
     const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed.type === 'string') return parsed as ServerMessage;
+    if (parsed && typeof parsed.type === 'string') {
+      if (parsed.payload && !parsed.data) {
+        parsed.data = parsed.payload;
+      }
+      return parsed as ServerMessage;
+    }
   } catch {
     /* fall through */
   }

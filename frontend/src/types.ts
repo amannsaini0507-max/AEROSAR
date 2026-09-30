@@ -120,11 +120,14 @@ export interface VideoFrameMsg {
 export type ServerMessage =
   | { type: 'detection'; data: DetectionMsg }
   | { type: 'hazard'; data: HazardMsg }
+  | { type: 'risk'; data: RiskScoreMsg }
   | { type: 'risk_score'; data: RiskScoreMsg }
   | { type: 'priority'; data: PriorityMsg }
   | { type: 'alert'; data: AlertMsg }
   | { type: 'mission_status'; data: MissionStatusMsg }
+  | { type: 'telemetry'; data: DronePoseMsg }
   | { type: 'drone_pose'; data: DronePoseMsg }
+  | { type: 'link_state'; data: SyncStatusMsg }
   | { type: 'sync_status'; data: SyncStatusMsg }
   | { type: 'route'; data: RouteMsg }
   | { type: 'video_status'; data: VideoStatusMsg }

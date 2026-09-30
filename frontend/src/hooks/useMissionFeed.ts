@@ -20,6 +20,8 @@ export interface MissionControls {
   start(): Promise<string>;
   /** `/mission/abort` (std_srvs/Trigger). */
   abort(): Promise<string>;
+  /** Optional command sender over WS */
+  sendCommand?: (action: string, params?: Record<string, unknown>) => void;
   /** Simulator only: emulate Member 6's network toggle. */
   cutLink?: () => void;
   restoreLink?: () => void;
@@ -88,6 +90,7 @@ export function useMissionFeed(wsUrl: string | null) {
     const connect = () => {
       setModel((m) => ({ ...m, socket: 'connecting' }));
       socket = new WebSocket(wsUrl);
+      socketRef.current = socket;
       socket.onopen = () => {
         if (!cancelled) setModel((m) => ({ ...m, socket: 'open' }));
       };
@@ -98,6 +101,7 @@ export function useMissionFeed(wsUrl: string | null) {
       };
       socket.onclose = () => {
         if (cancelled) return;
+        socketRef.current = null;
         setModel((m) => ({ ...m, socket: 'closed' }));
         retry = window.setTimeout(connect, RECONNECT_MS);
       };
@@ -107,6 +111,7 @@ export function useMissionFeed(wsUrl: string | null) {
 
     return () => {
       cancelled = true;
+      socketRef.current = null;
       if (retry) clearTimeout(retry);
       if (socket) {
         socket.onclose = null;
@@ -131,12 +136,32 @@ export function useMissionFeed(wsUrl: string | null) {
     return postTrigger('/api/mission/abort');
   }, []);
 
+  const socketRef = useRef<WebSocket | null>(null);
+
+  const sendCommand = useCallback((action: string, params: Record<string, unknown> = {}) => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(
+        JSON.stringify({
+          v: 1,
+          type: 'cmd',
+          seq: Date.now(),
+          sim_time: 0.0,
+          payload: { action, params },
+        })
+      );
+    }
+  }, []);
+
   const controls: MissionControls = {
     start,
     abort,
+    sendCommand,
     ...(source === 'simulator'
       ? { cutLink: () => scenarioRef.current?.cutLink(), restoreLink: () => scenarioRef.current?.restoreLink() }
-      : {})
+      : {
+          cutLink: () => sendCommand('link_cut'),
+          restoreLink: () => sendCommand('link_restore'),
+        }),
   };
 
   // Keep a record of every mission in this browser, so Mission history can reopen it later.
@@ -161,5 +186,5 @@ export function useMissionFeed(wsUrl: string | null) {
 
   const getSessionLog = useCallback(() => sessionLog.current.slice(), []);
 
-  return { model, now, controls, getSessionLog };
+  return { model, now, controls, getSessionLog, ingest };
 }

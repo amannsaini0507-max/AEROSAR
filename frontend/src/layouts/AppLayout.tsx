@@ -14,10 +14,11 @@ export type LayoutContext = {
   theme: Theme;
   controls: MissionControls;
   getSessionLog: () => RecordedMessage[];
+  ingest: (msg: any) => void;
 };
 
 export default function AppLayout() {
-  const { model, now, controls, getSessionLog } = useMissionFeed(WS_URL);
+  const { model, now, controls, getSessionLog, ingest } = useMissionFeed(WS_URL);
   const { theme, toggleTheme } = useTheme();
   const link = deriveLink(model, now);
 
@@ -25,7 +26,7 @@ export default function AppLayout() {
     <div className="app">
       <NavHeader theme={theme} onToggleTheme={toggleTheme} model={model} link={link} />
       <AlertToasts alerts={model.alerts} />
-      <Outlet context={{ model, now, link, theme, controls, getSessionLog } satisfies LayoutContext} />
+      <Outlet context={{ model, now, link, theme, controls, getSessionLog, ingest } satisfies LayoutContext} />
     </div>
   );
 }

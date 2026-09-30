@@ -1,125 +1,291 @@
-export function SparkleIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8L12 2z" />
-    </svg>
-  );
+import { useEffect, useRef } from 'react';
+
+/**
+ * Procedural Canvas Sprite Icon Renderer (Zero SVG Compliance per Hard Rule 5).
+ * All icons render purely onto HTML5 2D Canvas contexts.
+ */
+
+interface IconProps {
+  size?: number;
+  color?: string;
+  className?: string;
 }
 
-export function PulseIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 12h4l2 8 4-16 2 8h6" />
-    </svg>
-  );
+function useCanvasDrawer(
+  draw: (ctx: CanvasRenderingContext2D, size: number, color: string) => void,
+  size: number,
+  color: string
+) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Handle high-DPI displays
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, size, size);
+
+    ctx.save();
+    draw(ctx, size, color);
+    ctx.restore();
+  }, [draw, size, color]);
+
+  return canvasRef;
 }
 
-export function SlidersIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-      <line x1="4" y1="6" x2="20" y2="6" />
-      <line x1="4" y1="12" x2="20" y2="12" />
-      <line x1="4" y1="18" x2="20" y2="18" />
-      <circle cx="9" cy="6" r="1.8" fill="currentColor" stroke="none" />
-      <circle cx="15" cy="12" r="1.8" fill="currentColor" stroke="none" />
-      <circle cx="9" cy="18" r="1.8" fill="currentColor" stroke="none" />
-    </svg>
-  );
+export function SparkleIcon({ size = 18, color = 'currentColor' }: IconProps) {
+  const draw = (ctx: CanvasRenderingContext2D, s: number, col: string) => {
+    ctx.fillStyle = col;
+    const mid = s / 2;
+    ctx.beginPath();
+    ctx.moveTo(mid, 2);
+    ctx.quadraticCurveTo(mid, mid, s - 2, mid);
+    ctx.quadraticCurveTo(mid, mid, mid, s - 2);
+    ctx.quadraticCurveTo(mid, mid, 2, mid);
+    ctx.quadraticCurveTo(mid, mid, mid, 2);
+    ctx.fill();
+  };
+  const ref = useCanvasDrawer(draw, size, color);
+  return <canvas ref={ref} style={{ width: size, height: size, display: 'inline-block', verticalAlign: 'middle' }} />;
 }
 
-export function ClockIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3.5 2" strokeLinecap="round" />
-    </svg>
-  );
+export function PulseIcon({ size = 15, color = 'currentColor' }: IconProps) {
+  const draw = (ctx: CanvasRenderingContext2D, s: number, col: string) => {
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.8;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(2, s * 0.5);
+    ctx.lineTo(s * 0.3, s * 0.5);
+    ctx.lineTo(s * 0.45, s * 0.15);
+    ctx.lineTo(s * 0.6, s * 0.85);
+    ctx.lineTo(s * 0.75, s * 0.5);
+    ctx.lineTo(s - 2, s * 0.5);
+    ctx.stroke();
+  };
+  const ref = useCanvasDrawer(draw, size, color);
+  return <canvas ref={ref} style={{ width: size, height: size, display: 'inline-block', verticalAlign: 'middle' }} />;
 }
 
-export function GlobeIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
-      <circle cx="12" cy="12" r="9" />
-      <path d="M3 12h18M12 3c2.5 2.5 4 5.8 4 9s-1.5 6.5-4 9c-2.5-2.5-4-5.8-4-9s1.5-6.5 4-9z" />
-    </svg>
-  );
+export function SlidersIcon({ size = 15, color = 'currentColor' }: IconProps) {
+  const draw = (ctx: CanvasRenderingContext2D, s: number, col: string) => {
+    ctx.strokeStyle = col;
+    ctx.fillStyle = col;
+    ctx.lineWidth = 1.6;
+    ctx.lineCap = 'round';
+
+    // 3 slider lines
+    [s * 0.25, s * 0.5, s * 0.75].forEach((y, i) => {
+      ctx.beginPath();
+      ctx.moveTo(3, y);
+      ctx.lineTo(s - 3, y);
+      ctx.stroke();
+
+      const cx = i === 1 ? s * 0.65 : s * 0.35;
+      ctx.beginPath();
+      ctx.arc(cx, y, 2, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  };
+  const ref = useCanvasDrawer(draw, size, color);
+  return <canvas ref={ref} style={{ width: size, height: size, display: 'inline-block', verticalAlign: 'middle' }} />;
 }
 
-export function HamburgerIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-      <line x1="3" y1="6" x2="21" y2="6" />
-      <line x1="3" y1="12" x2="21" y2="12" />
-      <line x1="3" y1="18" x2="21" y2="18" />
-    </svg>
-  );
+export function ClockIcon({ size = 15, color = 'currentColor' }: IconProps) {
+  const draw = (ctx: CanvasRenderingContext2D, s: number, col: string) => {
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.6;
+    const mid = s / 2;
+    ctx.beginPath();
+    ctx.arc(mid, mid, mid - 2, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(mid, mid);
+    ctx.lineTo(mid, mid * 0.5);
+    ctx.moveTo(mid, mid);
+    ctx.lineTo(mid * 1.4, mid * 1.2);
+    ctx.stroke();
+  };
+  const ref = useCanvasDrawer(draw, size, color);
+  return <canvas ref={ref} style={{ width: size, height: size, display: 'inline-block', verticalAlign: 'middle' }} />;
 }
 
-export function SunIcon() {
-  return (
-    <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="4.2" stroke="currentColor" strokeWidth="1.6" />
-      <path
-        d="M12 2.5v2.4M12 19.1v2.4M4.6 4.6l1.7 1.7M17.7 17.7l1.7 1.7M2.5 12h2.4M19.1 12h2.4M4.6 19.4l1.7-1.7M17.7 6.3l1.7-1.7"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
+export function GlobeIcon({ size = 15, color = 'currentColor' }: IconProps) {
+  const draw = (ctx: CanvasRenderingContext2D, s: number, col: string) => {
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.5;
+    const mid = s / 2;
+    ctx.beginPath();
+    ctx.arc(mid, mid, mid - 2, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(2, mid);
+    ctx.lineTo(s - 2, mid);
+    ctx.moveTo(mid, 2);
+    ctx.lineTo(mid, s - 2);
+    ctx.stroke();
+  };
+  const ref = useCanvasDrawer(draw, size, color);
+  return <canvas ref={ref} style={{ width: size, height: size, display: 'inline-block', verticalAlign: 'middle' }} />;
 }
 
-export function MoonIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-      <path d="M20.5 14.2A8.5 8.5 0 1 1 9.8 3.5a7 7 0 0 0 10.7 10.7z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-    </svg>
-  );
+export function HamburgerIcon({ size = 18, color = 'currentColor' }: IconProps) {
+  const draw = (ctx: CanvasRenderingContext2D, s: number, col: string) => {
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 2.0;
+    ctx.lineCap = 'round';
+    [s * 0.25, s * 0.5, s * 0.75].forEach((y) => {
+      ctx.beginPath();
+      ctx.moveTo(3, y);
+      ctx.lineTo(s - 3, y);
+      ctx.stroke();
+    });
+  };
+  const ref = useCanvasDrawer(draw, size, color);
+  return <canvas ref={ref} style={{ width: size, height: size, display: 'inline-block', verticalAlign: 'middle' }} />;
 }
 
-export function BatteryIcon({ level }: { level: number }) {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-      <rect x="2" y="7" width="18" height="10" rx="2" stroke="currentColor" strokeWidth="1.6" />
-      <rect x="21" y="10" width="2" height="4" rx="1" fill="currentColor" />
-      <rect x="4" y="9" width={Math.max(2, (level / 100) * 14)} height="6" rx="1" fill="currentColor" />
-    </svg>
-  );
+export function SunIcon({ size = 17, color = 'currentColor' }: IconProps) {
+  const draw = (ctx: CanvasRenderingContext2D, s: number, col: string) => {
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.6;
+    const mid = s / 2;
+    ctx.beginPath();
+    ctx.arc(mid, mid, 3.5, 0, Math.PI * 2);
+    ctx.stroke();
+
+    for (let i = 0; i < 8; i++) {
+      const angle = (i * Math.PI) / 4;
+      const x1 = mid + Math.cos(angle) * 5.5;
+      const y1 = mid + Math.sin(angle) * 5.5;
+      const x2 = mid + Math.cos(angle) * 7.5;
+      const y2 = mid + Math.sin(angle) * 7.5;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+  };
+  const ref = useCanvasDrawer(draw, size, color);
+  return <canvas ref={ref} style={{ width: size, height: size, display: 'inline-block', verticalAlign: 'middle' }} />;
 }
 
-export function SignalIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-      <path d="M2 20h2M2 20v-4a2 2 0 0 1 2-2h1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <path d="M8 20v-8a2 2 0 0 1 2-2h1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <path d="M14 20V8a2 2 0 0 1 2-2h1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <path d="M20 20V4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
-  );
+export function MoonIcon({ size = 16, color = 'currentColor' }: IconProps) {
+  const draw = (ctx: CanvasRenderingContext2D, s: number, col: string) => {
+    ctx.strokeStyle = col;
+    ctx.fillStyle = col;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(s * 0.5, s * 0.5, s * 0.38, -Math.PI * 0.3, Math.PI * 0.8, false);
+    ctx.quadraticCurveTo(s * 0.45, s * 0.5, s * 0.5 + Math.cos(-Math.PI * 0.3) * s * 0.38, s * 0.5 + Math.sin(-Math.PI * 0.3) * s * 0.38);
+    ctx.stroke();
+  };
+  const ref = useCanvasDrawer(draw, size, color);
+  return <canvas ref={ref} style={{ width: size, height: size, display: 'inline-block', verticalAlign: 'middle' }} />;
 }
 
-export function GpsIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6" />
-      <path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
-  );
+export function BatteryIcon({ level, size = 14, color = 'currentColor' }: { level: number } & IconProps) {
+  const draw = (ctx: CanvasRenderingContext2D, s: number, col: string) => {
+    ctx.strokeStyle = col;
+    ctx.fillStyle = col;
+    ctx.lineWidth = 1.4;
+
+    const w = s * 0.8;
+    const h = s * 0.55;
+    const x = 1;
+    const y = (s - h) / 2;
+
+    ctx.strokeRect(x, y, w, h);
+    ctx.fillRect(x + w, y + h * 0.25, 2, h * 0.5);
+
+    const fillW = Math.max(1, ((w - 3) * Math.min(100, Math.max(0, level))) / 100);
+    ctx.fillRect(x + 1.5, y + 1.5, fillW, h - 3);
+  };
+  const ref = useCanvasDrawer(draw, size, color);
+  return <canvas ref={ref} style={{ width: size, height: size, display: 'inline-block', verticalAlign: 'middle' }} />;
 }
 
-export function CheckIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 12l5 5L20 6" />
-    </svg>
-  );
+export function SignalIcon({ size = 14, color = 'currentColor' }: IconProps) {
+  const draw = (ctx: CanvasRenderingContext2D, s: number, col: string) => {
+    ctx.fillStyle = col;
+    const barW = 2;
+    const heights = [s * 0.25, s * 0.5, s * 0.75, s * 0.95];
+    heights.forEach((bh, i) => {
+      const bx = 2 + i * (barW + 1.5);
+      ctx.fillRect(bx, s - bh, barW, bh);
+    });
+  };
+  const ref = useCanvasDrawer(draw, size, color);
+  return <canvas ref={ref} style={{ width: size, height: size, display: 'inline-block', verticalAlign: 'middle' }} />;
 }
 
-export function WarningIcon({ size = 12 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M12 3l10 18H2L12 3z" strokeLinejoin="round" />
-      <path d="M12 10v4" strokeLinecap="round" />
-    </svg>
-  );
+export function GpsIcon({ size = 14, color = 'currentColor' }: IconProps) {
+  const draw = (ctx: CanvasRenderingContext2D, s: number, col: string) => {
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1.4;
+    const mid = s / 2;
+    ctx.beginPath();
+    ctx.arc(mid, mid, 3, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(mid, 1);
+    ctx.lineTo(mid, 3.5);
+    ctx.moveTo(mid, s - 1);
+    ctx.lineTo(mid, s - 3.5);
+    ctx.moveTo(1, mid);
+    ctx.lineTo(3.5, mid);
+    ctx.moveTo(s - 1, mid);
+    ctx.lineTo(s - 3.5, mid);
+    ctx.stroke();
+  };
+  const ref = useCanvasDrawer(draw, size, color);
+  return <canvas ref={ref} style={{ width: size, height: size, display: 'inline-block', verticalAlign: 'middle' }} />;
+}
+
+export function CheckIcon({ size = 13, color = 'currentColor' }: IconProps) {
+  const draw = (ctx: CanvasRenderingContext2D, s: number, col: string) => {
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 2.0;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(2, s * 0.5);
+    ctx.lineTo(s * 0.4, s * 0.85);
+    ctx.lineTo(s - 2, s * 0.2);
+    ctx.stroke();
+  };
+  const ref = useCanvasDrawer(draw, size, color);
+  return <canvas ref={ref} style={{ width: size, height: size, display: 'inline-block', verticalAlign: 'middle' }} />;
+}
+
+export function WarningIcon({ size = 12, color = 'currentColor' }: IconProps) {
+  const draw = (ctx: CanvasRenderingContext2D, s: number, col: string) => {
+    ctx.strokeStyle = col;
+    ctx.fillStyle = col;
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = 'round';
+
+    const mid = s / 2;
+    ctx.beginPath();
+    ctx.moveTo(mid, 1.5);
+    ctx.lineTo(s - 1.5, s - 2);
+    ctx.lineTo(1.5, s - 2);
+    ctx.closePath();
+    ctx.stroke();
+
+    ctx.fillRect(mid - 0.75, s * 0.4, 1.5, s * 0.25);
+    ctx.fillRect(mid - 0.75, s * 0.75, 1.5, 1.5);
+  };
+  const ref = useCanvasDrawer(draw, size, color);
+  return <canvas ref={ref} style={{ width: size, height: size, display: 'inline-block', verticalAlign: 'middle' }} />;
 }
