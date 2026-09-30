@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { WebGLPathTracer } from 'three-gpu-pathtracer';
 
 export interface PhotoCaptureOptions {
   resolution: 'viewport' | '1080p' | '2k' | '4k';
@@ -15,6 +16,7 @@ export class PhotoModeManager {
   private camera: THREE.PerspectiveCamera;
   private canvas: HTMLCanvasElement;
   private savedCameraPos = new THREE.Vector3();
+  private pathTracer: WebGLPathTracer | null = null;
 
   constructor(
     renderer: THREE.WebGLRenderer,
@@ -139,10 +141,50 @@ export class PhotoModeManager {
     return dataUrl;
   }
 
+  /**
+   * Optional offline path-traced render using WebGLPathTracer (clearly labelled slow per spec)
+   */
+  public async renderPathTraced(options: { fileNamePrefix?: string; samples?: number } = {}): Promise<string> {
+    const { fileNamePrefix = 'aerosar_pathtrace', samples = 32 } = options;
+    this.isPathTracing = true;
+
+    try {
+      if (!this.pathTracer) {
+        this.pathTracer = new WebGLPathTracer(this.renderer);
+        this.pathTracer.bounces = 3;
+        this.pathTracer.tiles = new THREE.Vector2(2, 2);
+      }
+
+      await this.pathTracer.setSceneAsync(this.scene, this.camera);
+      this.pathTracer.reset();
+
+      for (let s = 0; s < samples; s++) {
+        this.pathTracer.renderSample();
+      }
+
+      const dataUrl = this.canvas.toDataURL('image/png');
+
+      const link = document.createElement('a');
+      link.download = `${fileNamePrefix}_${samples}spp_${Date.now()}.png`;
+      link.href = dataUrl;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      return dataUrl;
+    } finally {
+      this.isPathTracing = false;
+    }
+  }
+
   public dispose() {
     if (this.controls) {
       this.controls.dispose();
       this.controls = null;
+    }
+    if (this.pathTracer) {
+      this.pathTracer.dispose();
+      this.pathTracer = null;
     }
   }
 }

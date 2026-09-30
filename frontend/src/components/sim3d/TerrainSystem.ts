@@ -8,6 +8,7 @@ export class TerrainSystem {
   public material: THREE.MeshStandardMaterial;
   public rockInstances: THREE.InstancedMesh;
   public debrisInstances: THREE.InstancedMesh;
+  public vegetationInstances: THREE.InstancedMesh;
   public size = 30.0;
   private heightData: Float32Array;
   private res = 80;
@@ -226,6 +227,35 @@ export class TerrainSystem {
       this.debrisInstances.setMatrixAt(i, dummy.matrix);
     }
     this.debrisInstances.instanceMatrix.needsUpdate = true;
+
+    // Instanced Dead Vegetation / Arid Scrub Tufts
+    const vegGeo = new THREE.ConeGeometry(0.2, 0.4, 4, 1, true);
+    vegGeo.translate(0, 0.2, 0);
+    const vegMat = new THREE.MeshStandardMaterial({
+      color: 0x4a3c28, // dry withered scrub
+      roughness: 0.95,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
+    });
+    this.vegetationInstances = new THREE.InstancedMesh(vegGeo, vegMat, 70);
+    this.vegetationInstances.castShadow = true;
+    this.vegetationInstances.receiveShadow = true;
+    this.vegetationInstances.userData = { thermalTemp: 21.0 };
+
+    for (let i = 0; i < 70; i++) {
+      const vx = (Math.random() - 0.5) * 26;
+      const vz = (Math.random() - 0.5) * 26;
+      if (Math.hypot(vx - 6.0, vz - (-6.0)) < 8.0) continue; // Avoid water
+      const vy = this.getElevationAt(vx, vz);
+      const vScale = 0.5 + Math.random() * 0.7;
+
+      dummy.position.set(vx, vy, vz);
+      dummy.rotation.set(0, Math.random() * Math.PI, (Math.random() - 0.5) * 0.25);
+      dummy.scale.set(vScale, vScale * (0.8 + Math.random() * 0.5), vScale);
+      dummy.updateMatrix();
+      this.vegetationInstances.setMatrixAt(i, dummy.matrix);
+    }
+    this.vegetationInstances.instanceMatrix.needsUpdate = true;
   }
 
   public getElevationAt(x: number, z: number): number {
@@ -246,9 +276,12 @@ export class TerrainSystem {
     this.mesh.receiveShadow = config.shadows;
     this.rockInstances.castShadow = config.shadows;
     this.debrisInstances.castShadow = config.shadows;
+    this.vegetationInstances.castShadow = config.shadows;
     this.rockInstances.count = Math.min(120, config.instancedCount);
     this.debrisInstances.count = Math.min(80, Math.floor(config.instancedCount * 0.7));
+    this.vegetationInstances.count = Math.min(70, Math.floor(config.instancedCount * 0.6));
     this.rockInstances.instanceMatrix.needsUpdate = true;
     this.debrisInstances.instanceMatrix.needsUpdate = true;
+    this.vegetationInstances.instanceMatrix.needsUpdate = true;
   }
 }

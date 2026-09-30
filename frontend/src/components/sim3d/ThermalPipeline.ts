@@ -98,6 +98,137 @@ export class ThermalPipeline {
     return mat;
   }
 
+  public getThermalDecalMaterial(): THREE.ShaderMaterial {
+    let mat = this.thermalMaterialsMap.get('decal');
+    if (mat) return mat;
+
+    mat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec2 vUv;
+
+        vec3 evaluateThermalColor(float temp) {
+          float t;
+          if (temp < 30.0) {
+            t = clamp((temp - 12.0) / 18.0, 0.0, 1.0);
+            return mix(vec3(0.04, 0.02, 0.18), vec3(0.12, 0.22, 0.55), t);
+          } else if (temp < 48.0) {
+            t = clamp((temp - 30.0) / 18.0, 0.0, 1.0);
+            vec3 cBio1 = vec3(0.25, 0.65, 0.20);
+            vec3 cBio2 = vec3(0.98, 0.82, 0.05);
+            vec3 cBio3 = vec3(0.95, 0.22, 0.05);
+            return t < 0.5 ? mix(cBio1, cBio2, t * 2.0) : mix(cBio2, cBio3, (t - 0.5) * 2.0);
+          } else {
+            t = clamp((temp - 48.0) / 600.0, 0.0, 1.0);
+            vec3 cFire1 = vec3(0.98, 0.35, 0.02);
+            vec3 cFire2 = vec3(1.0, 0.85, 0.45);
+            vec3 cFire3 = vec3(1.0, 1.0, 1.0);
+            return t < 0.6 ? mix(cFire1, cFire2, t / 0.6) : mix(cFire2, cFire3, (t - 0.6) / 0.4);
+          }
+        }
+
+        void main() {
+          vec2 center = vUv - 0.5;
+          float dist = length(center) * 2.0;
+          if (dist > 1.0) discard;
+          float heat = smoothstep(1.0, 0.05, dist);
+          float temp = mix(20.0, 180.0, heat);
+          vec3 color = evaluateThermalColor(temp);
+          float alpha = smoothstep(1.0, 0.2, dist) * 0.85;
+          gl_FragColor = vec4(color, alpha);
+        }
+      `,
+    });
+    this.thermalMaterialsMap.set('decal', mat);
+    return mat;
+  }
+
+  public getThermalFlameMaterial(): THREE.ShaderMaterial {
+    let mat = this.thermalMaterialsMap.get('flame');
+    if (mat) return mat;
+
+    mat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec2 vUv;
+
+        vec3 evaluateThermalColor(float temp) {
+          float t = clamp((temp - 48.0) / 600.0, 0.0, 1.0);
+          vec3 cFire1 = vec3(0.98, 0.35, 0.02);
+          vec3 cFire2 = vec3(1.0, 0.85, 0.45);
+          vec3 cFire3 = vec3(1.0, 1.0, 1.0);
+          return t < 0.6 ? mix(cFire1, cFire2, t / 0.6) : mix(cFire2, cFire3, (t - 0.6) / 0.4);
+        }
+
+        void main() {
+          float shape = (1.0 - vUv.y) * 1.2;
+          float d = abs(vUv.x - 0.5) * 2.2;
+          if (d > shape) discard;
+          vec3 color = evaluateThermalColor(750.0);
+          float alpha = smoothstep(shape, shape - 0.25, d) * (1.0 - vUv.y * 0.45);
+          gl_FragColor = vec4(color * 1.5, alpha * 0.95);
+        }
+      `,
+    });
+    this.thermalMaterialsMap.set('flame', mat);
+    return mat;
+  }
+
+  public getThermalWaterMaterial(): THREE.ShaderMaterial {
+    let mat = this.thermalMaterialsMap.get('water');
+    if (mat) return mat;
+
+    mat = new THREE.ShaderMaterial({
+      transparent: true,
+      depthWrite: false,
+      vertexShader: `
+        varying vec3 vWorldPos;
+        void main() {
+          vec4 worldPos = modelMatrix * vec4(position, 1.0);
+          vWorldPos = worldPos.xyz;
+          gl_Position = projectionMatrix * viewMatrix * worldPos;
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vWorldPos;
+
+        vec3 evaluateThermalColor(float temp) {
+          float t = clamp((temp - 12.0) / 18.0, 0.0, 1.0);
+          return mix(vec3(0.04, 0.02, 0.18), vec3(0.12, 0.22, 0.55), t);
+        }
+
+        void main() {
+          float distToCenter = length(vWorldPos.xz - vec2(6.0, -6.0));
+          if (distToCenter > 8.4) discard;
+          vec3 color = evaluateThermalColor(16.0);
+          float shoreDist = 8.4 - distToCenter;
+          float alpha = clamp(shoreDist * 0.55, 0.0, 0.88);
+          gl_FragColor = vec4(color, alpha);
+        }
+      `,
+    });
+    this.thermalMaterialsMap.set('water', mat);
+    return mat;
+  }
+
   /**
    * Renders the true thermal sensor pass using per-object physical temperatures
    */
@@ -114,19 +245,27 @@ export class ThermalPipeline {
       if (obj instanceof THREE.Mesh) {
         this.originalMaterialsMap.set(obj, obj.material);
 
-        let tempC = 20.0; // default ambient
-        if (obj.userData?.thermalTemp != null) {
-          tempC = obj.userData.thermalTemp;
-        } else if (obj.parent?.userData?.thermalTemp != null) {
-          tempC = obj.parent.userData.thermalTemp;
+        if (obj.userData?.isThermalDecal) {
+          obj.material = this.getThermalDecalMaterial();
+        } else if (obj.userData?.isThermalFlame) {
+          obj.material = this.getThermalFlameMaterial();
+        } else if (obj.userData?.isThermalWater) {
+          obj.material = this.getThermalWaterMaterial();
+        } else {
+          let tempC = 20.0; // default ambient
+          if (obj.userData?.thermalTemp != null) {
+            tempC = obj.userData.thermalTemp;
+          } else if (obj.parent?.userData?.thermalTemp != null) {
+            tempC = obj.parent.userData.thermalTemp;
+          }
+
+          const isTransparent = Boolean(
+            Array.isArray(obj.material) ? obj.material[0].transparent : obj.material.transparent
+          );
+          const opacity = Array.isArray(obj.material) ? obj.material[0].opacity : obj.material.opacity;
+
+          obj.material = this.getThermalMaterial(tempC, isTransparent, opacity);
         }
-
-        const isTransparent = Boolean(
-          Array.isArray(obj.material) ? obj.material[0].transparent : obj.material.transparent
-        );
-        const opacity = Array.isArray(obj.material) ? obj.material[0].opacity : obj.material.opacity;
-
-        obj.material = this.getThermalMaterial(tempC, isTransparent, opacity);
       } else if (obj instanceof THREE.Points) {
         // Smoke is semi-transparent in thermal
         if (obj.userData?.thermalTemp != null) {
@@ -137,16 +276,19 @@ export class ThermalPipeline {
       }
     });
 
-    // 2. Render to target with thermal background
+    // 2. Render to target with thermal background (suppressing RGB distance fog)
     const prevBg = scene.background;
-    scene.background = new THREE.Color(0x060312); // Deep cold void
+    const prevFog = scene.fog;
+    scene.background = new THREE.Color(0x04020a); // Deep infrared cold background
+    scene.fog = null;
 
     renderer.setRenderTarget(target);
     renderer.render(scene, camera);
     renderer.setRenderTarget(null);
 
-    // 3. Restore original materials and background
+    // 3. Restore original materials, fog, and background
     scene.background = prevBg;
+    scene.fog = prevFog;
     this.originalMaterialsMap.forEach((origMat, mesh) => {
       mesh.material = origMat;
     });

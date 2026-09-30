@@ -3,6 +3,11 @@ import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import type { LightingVariant, QualityPreset } from './types';
 import { PRESET_CONFIGS } from './types';
 
+interface CachedEnv {
+  hdrTexture: THREE.DataTexture;
+  pmremTexture: THREE.Texture;
+}
+
 export class EnvironmentSystem {
   public scene: THREE.Scene;
   public renderer: THREE.WebGLRenderer;
@@ -11,7 +16,7 @@ export class EnvironmentSystem {
   public hemisphereLight: THREE.HemisphereLight;
   public pmremGenerator: THREE.PMREMGenerator;
   public currentVariant: LightingVariant = 'day';
-  private envMapCache: Map<string, THREE.Texture> = new Map();
+  private envMapCache: Map<string, CachedEnv> = new Map();
   private loader: RGBELoader;
 
   constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer) {
@@ -24,7 +29,7 @@ export class EnvironmentSystem {
     this.loader = new RGBELoader();
 
     // 1. Directional Sun Light
-    this.sunLight = new THREE.DirectionalLight(0xfff5ea, 1.4);
+    this.sunLight = new THREE.DirectionalLight(0xfff5ea, 1.8);
     this.sunLight.position.set(14, 28, 12);
     this.sunLight.castShadow = true;
     this.sunLight.shadow.camera.left = -18;
@@ -38,14 +43,14 @@ export class EnvironmentSystem {
     this.scene.add(this.sunLight);
 
     // 2. Ambient & Sky Hemisphere Fill
-    this.ambientLight = new THREE.AmbientLight(0xced8e6, 0.45);
+    this.ambientLight = new THREE.AmbientLight(0xcad7e8, 0.55);
     this.scene.add(this.ambientLight);
 
-    this.hemisphereLight = new THREE.HemisphereLight(0xddeeff, 0x3d352b, 0.4);
+    this.hemisphereLight = new THREE.HemisphereLight(0xddeeff, 0x3d352b, 0.45);
     this.scene.add(this.hemisphereLight);
 
     // 3. Post-disaster atmospheric depth fog
-    this.scene.fog = new THREE.FogExp2(0x1a212b, 0.015);
+    this.scene.fog = new THREE.FogExp2(0x7b8f9e, 0.006);
   }
 
   public setQuality(preset: QualityPreset) {
@@ -65,41 +70,41 @@ export class EnvironmentSystem {
     this.currentVariant = variant;
 
     let hdriFile = 'overcast_day_1k.hdr';
-    let sunColor = 0xfff3e3;
-    let sunIntensity = 1.4;
-    let fogColor = 0x222a36;
-    let fogDensity = 0.014;
-    let ambColor = 0xcad7e8;
-    let ambIntensity = 0.45;
-    let exposure = 1.0;
+    let sunColor = 0xfff5ea;
+    let sunIntensity = 2.0;
+    let fogColor = 0x7b8f9e;
+    let fogDensity = 0.006;
+    let ambColor = 0xb4c4d6;
+    let ambIntensity = 0.75;
+    let exposure = 1.1;
 
     switch (variant) {
       case 'dusk':
         hdriFile = 'dusk_1k.hdr';
-        sunColor = 0xff7733;
-        sunIntensity = 1.6;
-        fogColor = 0x422d2b;
-        fogDensity = 0.01;
-        ambColor = 0xa8776a;
-        ambIntensity = 0.65;
+        sunColor = 0xff6828;
+        sunIntensity = 1.8;
+        fogColor = 0x4a2c26;
+        fogDensity = 0.008;
+        ambColor = 0xa86c5c;
+        ambIntensity = 0.6;
         exposure = 1.05;
         break;
       case 'night':
         hdriFile = 'night_1k.hdr';
-        sunColor = 0x7fa2c7; // Moonlight
-        sunIntensity = 0.45;
-        fogColor = 0x090d14;
-        fogDensity = 0.014;
-        ambColor = 0x1f2b3d;
-        ambIntensity = 0.25;
+        sunColor = 0x7094be; // Moonlight
+        sunIntensity = 0.5;
+        fogColor = 0x080d18;
+        fogDensity = 0.01;
+        ambColor = 0x1c2838;
+        ambIntensity = 0.3;
         exposure = 1.35; // Boost camera gain in night mode
         break;
       case 'smoke':
         hdriFile = 'smoke_overcast_1k.hdr';
-        sunColor = 0xcca070; // Filtered through particulate
+        sunColor = 0xc49460; // Filtered through particulate
         sunIntensity = 1.2;
-        fogColor = 0x3d352e;
-        fogDensity = 0.015; // Realistic smoke aerial haze
+        fogColor = 0x3a3228;
+        fogDensity = 0.014; // Realistic smoke aerial haze
         ambColor = 0x544738;
         ambIntensity = 0.55;
         exposure = 1.1;
@@ -108,11 +113,11 @@ export class EnvironmentSystem {
       default:
         hdriFile = 'overcast_day_1k.hdr';
         sunColor = 0xfff5ea;
-        sunIntensity = 2.4;
-        fogColor = 0x6e7e91;
-        fogDensity = 0.007; // Clear daylight visibility
+        sunIntensity = 2.2;
+        fogColor = 0x7b8f9e;
+        fogDensity = 0.006; // Clear daylight visibility
         ambColor = 0xb4c4d6;
-        ambIntensity = 0.85;
+        ambIntensity = 0.8;
         exposure = 1.15;
         break;
     }
@@ -130,27 +135,32 @@ export class EnvironmentSystem {
 
     // Load / Cache HDRI Environment Map
     try {
-      let envTexture = this.envMapCache.get(hdriFile);
-      if (!envTexture) {
+      let cached = this.envMapCache.get(hdriFile);
+      if (!cached) {
         const url = `/assets/hdri/${hdriFile}`;
         const hdr = await this.loader.loadAsync(url);
+        hdr.mapping = THREE.EquirectangularReflectionMapping;
         const pmrem = this.pmremGenerator.fromEquirectangular(hdr);
-        envTexture = pmrem.texture;
-        hdr.dispose();
-        pmrem.dispose();
-        this.envMapCache.set(hdriFile, envTexture);
+        cached = {
+          hdrTexture: hdr,
+          pmremTexture: pmrem.texture,
+        };
+        this.envMapCache.set(hdriFile, cached);
       }
 
-      this.scene.environment = envTexture;
-      this.scene.background = envTexture;
+      this.scene.background = cached.hdrTexture;
+      this.scene.environment = cached.pmremTexture;
     } catch {
-      // Offline fallback: Procedural sky color gradient
+      // Offline fallback: Procedural sky color
       this.scene.background = new THREE.Color(fogColor);
     }
   }
 
   public dispose() {
-    this.envMapCache.forEach((tex) => tex.dispose());
+    this.envMapCache.forEach(({ hdrTexture, pmremTexture }) => {
+      hdrTexture.dispose();
+      pmremTexture.dispose();
+    });
     this.envMapCache.clear();
     this.pmremGenerator.dispose();
   }

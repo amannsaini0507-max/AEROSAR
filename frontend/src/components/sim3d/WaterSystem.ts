@@ -9,7 +9,7 @@ export class WaterSystem {
   public position: THREE.Vector3;
   private floatingItems: Array<{ mesh: THREE.Mesh; basePos: THREE.Vector3; freq: number; phase: number }> = [];
 
-  constructor(pos: [number, number, number] = [6.0, 0.18, -6.0], size: [number, number] = [16.0, 16.0]) {
+  constructor(pos: [number, number, number] = [6.0, -0.06, -6.0], size: [number, number] = [18.0, 18.0]) {
     this.position = new THREE.Vector3(...pos);
     this.geometry = new THREE.PlaneGeometry(size[0], size[1], 48, 48);
     this.geometry.rotateX(-Math.PI / 2);
@@ -41,8 +41,8 @@ export class WaterSystem {
           vUv = uv * 6.0;
           vec3 pos = position;
           // Gentle physical swell
-          float wave1 = sin(pos.x * 0.8 + uTime * 1.5) * cos(pos.z * 0.8 + uTime * 1.2) * 0.04;
-          float wave2 = sin(pos.x * 1.8 - uTime * 2.2) * 0.015;
+          float wave1 = sin(pos.x * 0.8 + uTime * 1.5) * cos(pos.z * 0.8 + uTime * 1.2) * 0.035;
+          float wave2 = sin(pos.x * 1.8 - uTime * 2.2) * 0.012;
           pos.y += wave1 + wave2;
 
           vec4 worldPos = modelMatrix * vec4(pos, 1.0);
@@ -81,15 +81,15 @@ export class WaterSystem {
           vec3 halfDir = normalize(uSunDir + viewDir);
           float spec = pow(max(dot(normal, halfDir), 0.0), 128.0) * 1.8;
 
-          // Shoreline distance falloff (simulated edge transparency)
-          float edgeDist = min(
-            min(vWorldPos.x - (-2.0), 14.0 - vWorldPos.x),
-            min(vWorldPos.z - (-14.0), 2.0 - vWorldPos.z)
-          );
-          float edgeAlpha = clamp(edgeDist * 0.8, 0.45, 0.88);
+          // Organic circular shoreline distance to basin center [6.0, -6.0]
+          float distToCenter = length(vWorldPos.xz - vec2(6.0, -6.0));
+          if (distToCenter > 8.4) discard;
 
-          // Shoreline foam fringe
-          float foam = smoothstep(0.4, 0.05, edgeDist) * 0.5;
+          float shoreDist = 8.4 - distToCenter;
+          float edgeAlpha = clamp(shoreDist * 0.55, 0.0, 0.88);
+
+          // Shoreline foam fringe along basin contour
+          float foam = smoothstep(0.9, 0.05, shoreDist) * 0.45;
 
           vec3 waterCol = mix(uDeepColor, uShallowColor, fresnel * 0.7);
           waterCol += spec * vec3(1.0, 0.95, 0.85);
@@ -107,6 +107,7 @@ export class WaterSystem {
     // Thermal properties: Water cooler than ground (~16.0 deg C)
     this.mesh.userData = {
       isThermalTarget: true,
+      isThermalWater: true,
       thermalTemp: 16.0,
       label: 'Zone B Flooded Basin',
     };

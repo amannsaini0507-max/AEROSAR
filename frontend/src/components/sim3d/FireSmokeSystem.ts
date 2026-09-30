@@ -91,7 +91,7 @@ export class FireSmokeSystem {
 
     this.charredDecal = new THREE.Mesh(decalGeo, decalMat);
     this.charredDecal.position.y = 0.03;
-    this.charredDecal.userData = { thermalTemp: 180.0 };
+    this.charredDecal.userData = { isThermalDecal: true, thermalTemp: 180.0 };
     this.group.add(this.charredDecal);
 
     // 3. Layered Flame Cards with Turbulence Shaders
@@ -158,7 +158,7 @@ export class FireSmokeSystem {
     for (let i = 0; i < 4; i++) {
       const mesh = new THREE.Mesh(flameGeo, this.flameMaterial);
       mesh.rotation.y = (i * Math.PI) / 4;
-      mesh.userData = { thermalTemp: 750.0 };
+      mesh.userData = { isThermalFlame: true, thermalTemp: 750.0 };
       this.flameMeshes.push(mesh);
       this.group.add(mesh);
     }
