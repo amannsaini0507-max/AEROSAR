@@ -38,6 +38,7 @@ export default function Simulator3DView({
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [photoModeActive, setPhotoModeActive] = useState<boolean>(false);
   const [photoResolution, setPhotoResolution] = useState<'viewport' | '1080p' | '2k' | '4k'>('1080p');
+  const [isPathTracingProgress, setIsPathTracingProgress] = useState<boolean>(false);
   const [manualActive, setManualActive] = useState(false);
   const [gpsDenied, setGpsDenied] = useState(false);
   const [yoloMode, setYoloMode] = useState(false);
@@ -117,6 +118,7 @@ export default function Simulator3DView({
     scene.add(terrainSystem.mesh);
     scene.add(terrainSystem.rockInstances);
     scene.add(terrainSystem.debrisInstances);
+    scene.add(terrainSystem.vegetationInstances);
 
     const waterSystem = new WaterSystem();
     scene.add(waterSystem.mesh);
@@ -223,6 +225,8 @@ export default function Simulator3DView({
 
       // Update Subsystems
       sim.drone.update(delta, simTimeSec, sim.dronePos.y, gpsDenied);
+      const groundY = sim.terrainSystem.getElevationAt(sim.dronePos.x, sim.dronePos.z);
+      sim.drone.blobShadow.position.y = groundY + 0.02;
       sim.fireSmokeSystem.update(delta, simTimeSec);
       sim.waterSystem.update(simTimeSec);
       sim.ruinsSystem.update(delta, simTimeSec);
@@ -237,16 +241,16 @@ export default function Simulator3DView({
         sim.mainCamera.lookAt(0, 0, 0);
         activeCam = sim.mainCamera;
       } else if (cameraModeRef.current === 'ruins_cam') {
-        sim.mainCamera.position.set(-11, 4.5, -9);
+        sim.mainCamera.position.set(-12.5, 5.2, -10.5);
         sim.mainCamera.lookAt(-6.5, 1.2, -5.5);
         activeCam = sim.mainCamera;
       } else if (cameraModeRef.current === 'fire_cam') {
-        sim.mainCamera.position.set(2.5, 2.5, 3.5);
-        sim.mainCamera.lookAt(5.5, 1.2, 6.5);
+        sim.mainCamera.position.set(1.5, 3.0, 2.5);
+        sim.mainCamera.lookAt(5.0, 0.8, 6.0);
         activeCam = sim.mainCamera;
       } else if (cameraModeRef.current === 'flood_cam') {
-        sim.mainCamera.position.set(2.0, 3.0, -10.5);
-        sim.mainCamera.lookAt(6.0, 0.2, -6.0);
+        sim.mainCamera.position.set(1.5, 3.8, -11.5);
+        sim.mainCamera.lookAt(6.0, 0.0, -6.0);
         activeCam = sim.mainCamera;
       } else {
         // Orbit mode around active drone
@@ -456,6 +460,19 @@ export default function Simulator3DView({
     });
   };
 
+  const handlePathTracedRender = async () => {
+    if (!simRef.current) return;
+    setIsPathTracingProgress(true);
+    try {
+      await simRef.current.photoMode.renderPathTraced({
+        fileNamePrefix: `aerosar_scenario_${scenarioId}_pt`,
+        samples: 32,
+      });
+    } finally {
+      setIsPathTracingProgress(false);
+    }
+  };
+
   // Command handlers
   const handleStart = () => onSendCommand?.('start');
   const handlePause = () => onSendCommand?.('pause');
@@ -565,139 +582,152 @@ export default function Simulator3DView({
           style={{ width: '100%', height: canvasHeight, minHeight: '340px' }}
         />
 
-        {/* Top-Left: Scenario & Lighting Pickers */}
+        {/* Floating Top Control Bar (Responsive & Non-overlapping) */}
         <div
           style={{
             position: 'absolute',
-            top: '10px',
-            left: '10px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '6px',
-            background: 'rgba(11, 15, 23, 0.88)',
-            padding: '6px 10px',
-            borderRadius: '6px',
-            zIndex: 10,
-            backdropFilter: 'blur(4px)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
-            maxWidth: '360px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '11px', fontWeight: 600, color: '#38bdf8' }}>Scenario:</span>
-            <select
-              id="scenario-select"
-              data-testid="scenario-select"
-              value={scenarioId}
-              onChange={(e) => handleScenarioChange(e.target.value)}
-              style={{
-                background: '#1e293b',
-                color: '#f8fafc',
-                border: '1px solid #334155',
-                borderRadius: '4px',
-                padding: '2px 6px',
-                fontSize: '11px',
-                cursor: 'pointer',
-              }}
-            >
-              <option value="1">1: Flood + Survivors (Zone B)</option>
-              <option value="2">2: Fire + Smoke + Critical (Primary)</option>
-              <option value="3">3: Collapsed Building (Zone A)</option>
-              <option value="4">4: GPS-Denied Navigation</option>
-              <option value="5">5: Network Failure & Sync</option>
-              <option value="combined">Combined Demo (2 + 5)</option>
-            </select>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8' }}>Lighting:</span>
-            {(['day', 'dusk', 'night', 'smoke'] as LightingVariant[]).map((l) => (
-              <button
-                key={l}
-                type="button"
-                className={`btn-tag ${lighting === l ? 'is-active' : ''}`}
-                onClick={() => setLighting(l)}
-                style={{ textTransform: 'capitalize', padding: '1px 6px', fontSize: '10px' }}
-              >
-                {l}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Top-Right: Camera Mode Switcher */}
-        <div
-          style={{
-            position: 'absolute',
-            top: '10px',
-            right: '10px',
+            top: '8px',
+            left: '8px',
+            right: '8px',
             display: 'flex',
             flexWrap: 'wrap',
-            gap: '4px',
-            background: 'rgba(11, 15, 23, 0.88)',
-            padding: '6px 8px',
-            borderRadius: '6px',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '8px',
+            pointerEvents: 'none',
             zIndex: 10,
-            backdropFilter: 'blur(4px)',
-            border: '1px solid rgba(255, 255, 255, 0.1)',
           }}
         >
-          <button
-            type="button"
-            className={`btn-tag ${cameraMode === 'orbit' ? 'is-active' : ''}`}
-            onClick={() => setCameraMode('orbit')}
-          >
-            Orbit
-          </button>
-          <button
-            type="button"
-            className={`btn-tag ${cameraMode === 'drone_fpv' ? 'is-active' : ''}`}
-            onClick={() => setCameraMode('drone_fpv')}
-          >
-            Drone FPV
-          </button>
-          <button
-            type="button"
-            className={`btn-tag ${cameraMode === 'top_down' ? 'is-active' : ''}`}
-            onClick={() => setCameraMode('top_down')}
-          >
-            Tactical Top
-          </button>
-          <button
-            type="button"
-            className={`btn-tag ${cameraMode === 'fire_cam' ? 'is-active' : ''}`}
-            onClick={() => setCameraMode('fire_cam')}
-          >
-            Zone C
-          </button>
-          <button
-            type="button"
-            className={`btn-tag ${cameraMode === 'ruins_cam' ? 'is-active' : ''}`}
-            onClick={() => setCameraMode('ruins_cam')}
-          >
-            Zone A
-          </button>
-          <button
-            type="button"
-            className={`btn-tag ${cameraMode === 'flood_cam' ? 'is-active' : ''}`}
-            onClick={() => setCameraMode('flood_cam')}
-          >
-            Zone B
-          </button>
-
-          {/* Photo Mode Trigger */}
-          <button
-            type="button"
-            className={`btn-tag ${photoModeActive ? 'is-active' : ''}`}
-            onClick={handleTogglePhotoMode}
+          {/* Left: Scenario & Lighting Pickers */}
+          <div
             style={{
-              background: photoModeActive ? '#e11d48' : '#0284c7',
-              color: '#ffffff',
-              fontWeight: 600,
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'rgba(11, 15, 23, 0.92)',
+              padding: '4px 8px',
+              borderRadius: '6px',
+              backdropFilter: 'blur(6px)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              pointerEvents: 'auto',
             }}
           >
-            {photoModeActive ? 'Exit Photo' : 'Photo Mode'}
-          </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: '#38bdf8' }}>Scenario:</span>
+              <select
+                id="scenario-select"
+                data-testid="scenario-select"
+                value={scenarioId}
+                onChange={(e) => handleScenarioChange(e.target.value)}
+                style={{
+                  background: '#1e293b',
+                  color: '#f8fafc',
+                  border: '1px solid #334155',
+                  borderRadius: '4px',
+                  padding: '2px 6px',
+                  fontSize: '11px',
+                  cursor: 'pointer',
+                  maxWidth: '180px',
+                }}
+              >
+                <option value="1">1: Flood + Survivors</option>
+                <option value="2">2: Fire + Smoke (Primary)</option>
+                <option value="3">3: Collapsed Ruins</option>
+                <option value="4">4: GPS-Denied Nav</option>
+                <option value="5">5: Network Failure</option>
+                <option value="combined">Combined Demo (2 + 5)</option>
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8' }}>Light:</span>
+              {(['day', 'dusk', 'night', 'smoke'] as LightingVariant[]).map((l) => (
+                <button
+                  key={l}
+                  type="button"
+                  className={`btn-tag ${lighting === l ? 'is-active' : ''}`}
+                  onClick={() => setLighting(l)}
+                  style={{ textTransform: 'capitalize', padding: '1px 5px', fontSize: '10px' }}
+                >
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Right: Camera Mode Switcher & Photo Mode */}
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap',
+              alignItems: 'center',
+              gap: '4px',
+              background: 'rgba(11, 15, 23, 0.92)',
+              padding: '4px 8px',
+              borderRadius: '6px',
+              backdropFilter: 'blur(6px)',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              pointerEvents: 'auto',
+            }}
+          >
+            <button
+              type="button"
+              className={`btn-tag ${cameraMode === 'orbit' ? 'is-active' : ''}`}
+              onClick={() => setCameraMode('orbit')}
+            >
+              Orbit
+            </button>
+            <button
+              type="button"
+              className={`btn-tag ${cameraMode === 'drone_fpv' ? 'is-active' : ''}`}
+              onClick={() => setCameraMode('drone_fpv')}
+            >
+              Drone FPV
+            </button>
+            <button
+              type="button"
+              className={`btn-tag ${cameraMode === 'top_down' ? 'is-active' : ''}`}
+              onClick={() => setCameraMode('top_down')}
+            >
+              Tactical Top
+            </button>
+            <button
+              type="button"
+              className={`btn-tag ${cameraMode === 'fire_cam' ? 'is-active' : ''}`}
+              onClick={() => setCameraMode('fire_cam')}
+            >
+              Zone C
+            </button>
+            <button
+              type="button"
+              className={`btn-tag ${cameraMode === 'ruins_cam' ? 'is-active' : ''}`}
+              onClick={() => setCameraMode('ruins_cam')}
+            >
+              Zone A
+            </button>
+            <button
+              type="button"
+              className={`btn-tag ${cameraMode === 'flood_cam' ? 'is-active' : ''}`}
+              onClick={() => setCameraMode('flood_cam')}
+            >
+              Zone B
+            </button>
+
+            {/* Photo Mode Trigger */}
+            <button
+              type="button"
+              className={`btn-tag ${photoModeActive ? 'is-active' : ''}`}
+              onClick={handleTogglePhotoMode}
+              style={{
+                background: photoModeActive ? '#e11d48' : '#0284c7',
+                color: '#ffffff',
+                fontWeight: 600,
+              }}
+            >
+              {photoModeActive ? 'Exit Photo' : 'Photo Mode'}
+            </button>
+          </div>
         </div>
 
         {/* Photo Mode Active HUD Overlay */}
@@ -705,7 +735,7 @@ export default function Simulator3DView({
           <div
             style={{
               position: 'absolute',
-              top: '60px',
+              top: '55px',
               right: '10px',
               display: 'flex',
               flexDirection: 'column',
@@ -716,7 +746,7 @@ export default function Simulator3DView({
               zIndex: 20,
               border: '1px solid #38bdf8',
               boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
-              width: '240px',
+              width: '260px',
             }}
           >
             <div style={{ fontSize: '13px', fontWeight: 600, color: '#38bdf8' }}>
@@ -748,22 +778,46 @@ export default function Simulator3DView({
               </select>
             </div>
 
-            <button
-              type="button"
-              className="btn-control"
-              onClick={handleCapturePhoto}
-              style={{
-                background: '#0284c7',
-                color: '#fff',
-                fontWeight: 600,
-                padding: '6px 12px',
-                borderRadius: '4px',
-                border: 'none',
-                cursor: 'pointer',
-              }}
-            >
-              Export PNG
-            </button>
+            <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
+              <button
+                type="button"
+                className="btn-control"
+                onClick={handleCapturePhoto}
+                style={{
+                  background: '#0284c7',
+                  color: '#fff',
+                  fontWeight: 600,
+                  padding: '6px 10px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  flex: 1,
+                  fontSize: '11px',
+                }}
+              >
+                Export PNG
+              </button>
+              <button
+                type="button"
+                className="btn-control"
+                onClick={handlePathTracedRender}
+                disabled={isPathTracingProgress}
+                title="Progressive GPU path tracing (offline ray-traced quality, clearly slow)"
+                style={{
+                  background: isPathTracingProgress ? '#475569' : '#7c3aed',
+                  color: '#fff',
+                  fontWeight: 600,
+                  padding: '6px 10px',
+                  borderRadius: '4px',
+                  border: 'none',
+                  cursor: isPathTracingProgress ? 'wait' : 'pointer',
+                  flex: 1,
+                  fontSize: '11px',
+                }}
+              >
+                {isPathTracingProgress ? 'Tracing...' : 'Path-Trace (Slow)'}
+              </button>
+            </div>
           </div>
         )}
 
@@ -812,8 +866,8 @@ export default function Simulator3DView({
           </div>
 
           {/* Operational Toggles */}
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
-            <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+            <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', color: '#f1f5f9', fontSize: '11px', fontWeight: 500 }}>
               <input
                 type="checkbox"
                 checked={manualActive}
@@ -821,7 +875,7 @@ export default function Simulator3DView({
               />
               WASD Manual
             </label>
-            <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', color: '#f1f5f9', fontSize: '11px', fontWeight: 500 }}>
               <input
                 type="checkbox"
                 checked={showZones}
@@ -829,7 +883,7 @@ export default function Simulator3DView({
               />
               Show Zones
             </label>
-            <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', color: '#f1f5f9', fontSize: '11px', fontWeight: 500 }}>
               <input
                 type="checkbox"
                 checked={gpsDenied}
@@ -840,7 +894,7 @@ export default function Simulator3DView({
               />
               GPS-Denied
             </label>
-            <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', color: '#f1f5f9', fontSize: '11px', fontWeight: 500 }}>
               <input
                 type="checkbox"
                 checked={yoloMode}

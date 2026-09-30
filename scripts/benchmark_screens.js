@@ -164,6 +164,10 @@ async function run() {
   // Thermal Channel Screenshot on Scenario 2
   console.log('\nCapturing Thermal Sensor View (Scenario 2)...');
   await page.selectOption('#scenario-select', '2');
+  const zoneCBtn = await page.$('.dashboard__sim3d button.btn-tag:has-text("Zone C")');
+  if (zoneCBtn) await zoneCBtn.click();
+  await page.waitForTimeout(500);
+
   const thermalBtn = await page.$('.segmented__btn:has-text("Thermal")');
   if (thermalBtn) {
     await thermalBtn.click();
@@ -180,6 +184,10 @@ async function run() {
   // Show Zones Overlay Screenshot on Scenario 3 (GPS-denied volume)
   console.log('\nCapturing GPS-Denied Zone Overlay (Scenario 3)...');
   await page.selectOption('#scenario-select', '3');
+  const zoneABtn = await page.$('.dashboard__sim3d button.btn-tag:has-text("Zone A")');
+  if (zoneABtn) await zoneABtn.click();
+  await page.waitForTimeout(500);
+
   const zonesCheckbox = await page.$('input[type="checkbox"]:near(:text("Show Zones"))');
   if (zonesCheckbox) {
     await zonesCheckbox.check();
