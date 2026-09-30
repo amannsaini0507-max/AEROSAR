@@ -449,9 +449,18 @@ class WebotsDroneNode:
 
 
 def detect_webots_port(max_wait=4.0):
+    import socket
     start = time.time()
+    candidate_ports = [1234, 1235, 1236, 1237]
     while time.time() - start < max_wait:
-        # Check ss for webots-bin listening port
+        # Cross-platform socket connection probe
+        for p in candidate_ports:
+            try:
+                with socket.create_connection(("127.0.0.1", p), timeout=0.1):
+                    return p
+            except (OSError, ConnectionRefusedError):
+                pass
+        # Linux fallback: Check ss for webots-bin listening port
         try:
             out = subprocess.check_output("ss -tulpn 2>/dev/null | grep webots-bin", shell=True).decode()
             for line in out.splitlines():

@@ -1,7 +1,7 @@
 """HTTP and WebSocket data contracts for the AEROSAR backend."""
 
 from datetime import datetime, timezone
-from typing import Any, Literal, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -67,6 +67,7 @@ class Hazard(APIModel):
     confidence: float = Field(ge=0, le=1)
     latitude: float
     longitude: float
+    radius_m: float = 8.0
     stamp: datetime = Field(default_factory=utc_now)
 
     @field_validator("stamp", mode="before")
@@ -81,6 +82,7 @@ class MissionStatus(APIModel):
     battery_percent: float = Field(ge=0, le=100)
     coverage_percent: float = Field(ge=0, le=100)
     link_connected: bool = True
+    nav_mode: str = "GPS_NAV"
     stamp: datetime = Field(default_factory=utc_now)
 
     @field_validator("stamp", mode="before")
@@ -120,3 +122,33 @@ class RiskScore(APIModel):
     score: float = Field(ge=0, le=1)
     priority_level: Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
     reason: str
+    explain: List[str] = Field(default_factory=list)
+
+
+# ==============================================================================
+# WebSocket v1 Protocol Schema
+# ==============================================================================
+class WSEnvelope(APIModel):
+    v: int = Field(default=1, description="Protocol version, must be 1")
+    type: str
+    seq: int = 0
+    sim_time: float = 0.0
+    payload: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WSCommandPayload(APIModel):
+    action: Literal[
+        "start",
+        "pause",
+        "resume",
+        "rtl",
+        "arm",
+        "disarm",
+        "emergency_land",
+        "manual_input",
+        "link_cut",
+        "link_restore",
+        "set_mode",
+        "sync",
+    ]
+    params: Dict[str, Any] = Field(default_factory=dict)

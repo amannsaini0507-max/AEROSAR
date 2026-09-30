@@ -31,6 +31,15 @@ SCENARIOS = [
 ]
 
 
+def kill_webots_processes():
+    if sys.platform == "win32":
+        for proc in ["webots.exe", "driver.exe"]:
+            subprocess.run(["taskkill", "/F", "/IM", proc, "/T"], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+    else:
+        subprocess.run(["pkill", "-9", "webots"], stderr=subprocess.DEVNULL)
+        subprocess.run(["pkill", "-9", "driver"], stderr=subprocess.DEVNULL)
+
+
 def run_scenario_check(scenario_name, world_file):
     print("\n" + "=" * 70)
     print(f"  Testing {scenario_name}: {world_file}")
@@ -43,8 +52,7 @@ def run_scenario_check(scenario_name, world_file):
 
     print(f"  [1] World file verified exists: {world_file}")
 
-    subprocess.run(["pkill", "-9", "webots"], stderr=subprocess.DEVNULL)
-    subprocess.run(["pkill", "-9", "driver"], stderr=subprocess.DEVNULL)
+    kill_webots_processes()
     time.sleep(1.0)
 
     # Launch Webots
@@ -198,8 +206,7 @@ def run_scenario_check(scenario_name, world_file):
         webots_proc.wait(timeout=3)
     except Exception:
         pass
-    subprocess.run(["pkill", "-9", "webots"], stderr=subprocess.DEVNULL)
-    subprocess.run(["pkill", "-9", "driver"], stderr=subprocess.DEVNULL)
+    kill_webots_processes()
     time.sleep(2.5)
 
     return all_passed
