@@ -326,6 +326,12 @@ export default function Simulator3DView({
       `,
     });
 
+    // Fullscreen quad for thermal post-process shader
+    const postScene = new THREE.Scene();
+    const postCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const postQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), thermalMaterial);
+    postScene.add(postQuad);
+
     simRef.current = {
       renderer,
       scene,
@@ -398,22 +404,37 @@ export default function Simulator3DView({
         sim.droneGroup.rotation.copy(sim.droneRot);
       }
 
-      // Camera views
+      // Camera selection & Thermal vs RGB Render Pass
       const sim = simRef.current;
       if (sim) {
-        if (cameraModeRef.current === 'orbit') {
+        let activeCam: THREE.PerspectiveCamera = sim.mainCamera;
+        if (cameraModeRef.current === 'drone_fpv') {
+          activeCam = sim.fpvCamera;
+        } else if (cameraModeRef.current === 'top_down') {
+          sim.mainCamera.position.set(0, 28, 0);
+          sim.mainCamera.lookAt(0, 0, 0);
+          activeCam = sim.mainCamera;
+        } else {
           sim.mainCamera.position.x = sim.dronePos.x + 14 * Math.sin(timeNow * 0.0003);
           sim.mainCamera.position.z = sim.dronePos.z + 14 * Math.cos(timeNow * 0.0003);
           sim.mainCamera.position.y = Math.max(8, sim.dronePos.y + 7);
           sim.mainCamera.lookAt(sim.dronePos);
-          sim.renderer.render(sim.scene, sim.mainCamera);
-        } else if (cameraModeRef.current === 'top_down') {
-          sim.mainCamera.position.set(0, 28, 0);
-          sim.mainCamera.lookAt(0, 0, 0);
-          sim.renderer.render(sim.scene, sim.mainCamera);
+          activeCam = sim.mainCamera;
+        }
+
+        if (channelRef.current === 'thermal') {
+          // Offscreen pass into render target texture
+          sim.renderer.setRenderTarget(sim.renderTargetRGB);
+          sim.renderer.render(sim.scene, activeCam);
+          sim.renderer.setRenderTarget(null);
+
+          // Thermal palette fragment shader pass
+          sim.thermalMaterial.uniforms.tDiffuse.value = sim.renderTargetRGB.texture;
+          sim.renderer.render(postScene, postCamera);
         } else {
-          // Drone FPV
-          sim.renderer.render(sim.scene, sim.fpvCamera);
+          // Direct RGB render
+          sim.renderer.setRenderTarget(null);
+          sim.renderer.render(sim.scene, activeCam);
         }
       }
 
@@ -497,6 +518,28 @@ export default function Simulator3DView({
       window.removeEventListener('keyup', onKeyUp);
     };
   }, [manualActive, onSendCommand]);
+
+  // Section 2: 5 Hz YOLO Frame Dispatch to Backend (optional YOLO CPU inference mode)
+  useEffect(() => {
+    if (!yoloMode) return;
+
+    const interval = setInterval(async () => {
+      const sim = simRef.current;
+      if (!sim) return;
+      try {
+        const frameData = sim.renderer.domElement.toDataURL('image/jpeg', 0.5);
+        await fetch('http://127.0.0.1:8000/api/detect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_base64: frameData }),
+        });
+      } catch {
+        // Fallback or offline silence
+      }
+    }, 200);
+
+    return () => clearInterval(interval);
+  }, [yoloMode]);
 
   // Command handlers
   const handleStart = () => onSendCommand?.('start');

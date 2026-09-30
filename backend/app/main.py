@@ -41,6 +41,10 @@ from aerosar_core.geo import (
     geodetic_to_enu,
     geo_distance_m,
     geotag_detection,
+    add_gps_noise,
+)
+from aerosar_core.perception import (
+    SyntheticPerceptionEngine,
 )
 from aerosar_core.risk import (
     calculate_risk,
@@ -171,6 +175,12 @@ latest_pose = {
     "gps_fix": True,
     "battery_percent": 98.5,
     "flight_mode": "AUTO_SEARCH",
+    "pitch_deg": 0.0,
+    "roll_deg": 0.0,
+    "yaw_deg": 0.0,
+    "pitch_rate_dps": 0.0,
+    "roll_rate_dps": 0.0,
+    "yaw_rate_dps": 0.0,
     "stamp": {"sec": int(time.time()), "nanosec": 0},
 }
 
@@ -374,6 +384,14 @@ class StandaloneSimulator:
         self.bspline = UniformCubicBSpline(raw_waypoints)
         self.progress_u: float = 0.0
 
+        # Vehicle navigation state
+        self.current_enu = [0.0, 0.0, 1.5]
+        self.manual_vel = [0.0, 0.0, 0.0]
+        self.last_known_gps = (BASE_LAT, BASE_LON)
+
+        # Synthetic perception engine
+        self.perception_engine = SyntheticPerceptionEngine(seed=42, fov_radius_m=4.8)
+
         # Scenario victims & hazards
         self.staged_hazards = [
             {"id": "haz-ruins-01", "hazard_type": "damaged_structure", "confidence": 0.90, "enu": (-7.0, 6.0)},
@@ -394,6 +412,7 @@ class StandaloneSimulator:
             vehicle_sm.arm()
             vehicle_sm.start_flight()
             latest_mission_status["state"] = "SEARCHING"
+            latest_pose["flight_mode"] = "AUTO_SEARCH"
 
     def pause(self):
         latest_mission_status["state"] = "PAUSED"
@@ -404,47 +423,80 @@ class StandaloneSimulator:
     def rtl(self):
         vehicle_sm.return_to_launch()
         latest_mission_status["state"] = "RETURNING"
+        latest_pose["flight_mode"] = "RTL"
 
-    def emergency_land(self):
-        vehicle_sm.transition_to(VehicleState.EMERGENCY_LAND, command="emergency_land")
+    def emergency_land(self, trigger: str = "OPERATOR_COMMAND") -> Optional[SafetyReport]:
+        _, report = vehicle_sm.trigger_failsafe(
+            trigger=trigger,
+            sim_time=self.sim_time,
+            inputs={"battery_percent": latest_pose["battery_percent"], "command": "emergency_land"},
+            outcome="Operator emergency landing initiated; descent engaged.",
+        )
         latest_mission_status["state"] = "EMERGENCY_LAND"
+        latest_pose["flight_mode"] = "EMERGENCY_LAND"
+        return report
+
+    def apply_manual_input(self, vx: float, vy: float, vz: float, yaw_rate: float = 0.0):
+        self.manual_vel = [float(vx), float(vy), float(vz)]
+        if math.hypot(vx, vy) > 0.01:
+            latest_pose["flight_mode"] = "MANUAL"
 
 
 sim_engine = StandaloneSimulator()
 
 
 async def standalone_sim_loop():
-    """High-frequency (30 Hz / 15 Hz) simulation update loop."""
+    """High-frequency (30 Hz / 15 Hz) simulation update loop with drift-compensated pacing."""
     print("[BACKEND] Standalone Simulation Engine initialized.")
     last_hb_time = 0.0
     start_wall_time = time.time()
+    next_tick = time.perf_counter()
 
     while True:
         try:
             rate_hz = 15.0 if hub.low_power else 30.0
             dt = 1.0 / rate_hz
-            await asyncio.sleep(dt)
+
+            next_tick += dt
+            sleep_duration = next_tick - time.perf_counter()
+            if sleep_duration > 0:
+                await asyncio.sleep(sleep_duration)
+            else:
+                next_tick = time.perf_counter()
+                await asyncio.sleep(0.001)
 
             sim_time = time.time() - start_wall_time
             sim_engine.sim_time = sim_time
 
-            # Update drone position along B-spline if in flight
+            # Update drone position
             state = vehicle_sm.state
-            if state == VehicleState.IN_FLIGHT and latest_mission_status["state"] == "SEARCHING":
-                sim_engine.progress_u = min(1.0, sim_engine.progress_u + (dt * 0.015))
-                # Evaluate spline position
-                x, y, z = sim_engine.bspline.evaluate(sim_engine.progress_u)
+            if state == VehicleState.IN_FLIGHT and latest_mission_status["state"] in ("SEARCHING", "PAUSED"):
+                if latest_pose["flight_mode"] == "MANUAL" and any(abs(v) > 0.01 for v in sim_engine.manual_vel):
+                    # Manual flight mode velocity integration
+                    sim_engine.current_enu[0] = max(-14.0, min(14.0, sim_engine.current_enu[0] + sim_engine.manual_vel[0] * dt))
+                    sim_engine.current_enu[1] = max(-14.0, min(14.0, sim_engine.current_enu[1] + sim_engine.manual_vel[1] * dt))
+                    sim_engine.current_enu[2] = max(0.5, min(15.0, sim_engine.current_enu[2] + sim_engine.manual_vel[2] * dt))
+                    x, y, z = sim_engine.current_enu
+                    heading_rad = math.atan2(sim_engine.manual_vel[0], sim_engine.manual_vel[1]) if math.hypot(sim_engine.manual_vel[0], sim_engine.manual_vel[1]) > 0.1 else 0.0
+                    heading_deg = (math.degrees(heading_rad) + 360.0) % 360.0
+                elif latest_mission_status["state"] == "SEARCHING":
+                    # Autonomous lawnmower sweep along B-spline
+                    sim_engine.progress_u = min(1.0, sim_engine.progress_u + (dt * 0.015))
+                    x, y, z = sim_engine.bspline.evaluate(sim_engine.progress_u)
 
-                # Add local reactive repulsive avoidance force
-                rfx, rfy, rfz = potential_field.compute_repulsive_force((x, y, z))
-                x += rfx * 0.3
-                y += rfy * 0.3
-                z += rfz * 0.3
+                    # Add local reactive repulsive avoidance force
+                    rfx, rfy, rfz = potential_field.compute_repulsive_force((x, y, z))
+                    x += rfx * 0.3
+                    y += rfy * 0.3
+                    z += rfz * 0.3
+                    sim_engine.current_enu = [x, y, z]
 
-                # Calculate heading
-                next_x, next_y, _ = sim_engine.bspline.evaluate(min(1.0, sim_engine.progress_u + 0.005))
-                heading_rad = math.atan2(next_x - x, next_y - y)
-                heading_deg = (math.degrees(heading_rad) + 360.0) % 360.0
+                    next_x, next_y, _ = sim_engine.bspline.evaluate(min(1.0, sim_engine.progress_u + 0.005))
+                    heading_rad = math.atan2(next_x - x, next_y - y)
+                    heading_deg = (math.degrees(heading_rad) + 360.0) % 360.0
+                else:
+                    x, y, z = sim_engine.current_enu
+                    heading_deg = latest_pose["heading_deg"]
 
                 plat, plon, palt = enu_to_geodetic(x, y, z)
 
@@ -453,11 +505,24 @@ async def standalone_sim_loop():
                 latest_mission_status["battery_percent"] = latest_pose["battery_percent"]
                 latest_mission_status["coverage_percent"] = round(sim_engine.progress_u * 100.0, 1)
 
-                latest_pose["latitude"] = round(plat, 7)
-                latest_pose["longitude"] = round(plon, 7)
+                # GPS sensor model: Gaussian noise if GPS active; frozen if GPS-denied
+                if latest_mission_status["nav_mode"] == "GPS_DENIED":
+                    latest_pose["gps_fix"] = False
+                    latest_pose["latitude"] = sim_engine.last_known_gps[0]
+                    latest_pose["longitude"] = sim_engine.last_known_gps[1]
+                else:
+                    latest_pose["gps_fix"] = True
+                    noisy_lat, noisy_lon = add_gps_noise(plat, plon, std_m=0.35)
+                    sim_engine.last_known_gps = (round(noisy_lat, 7), round(noisy_lon, 7))
+                    latest_pose["latitude"] = sim_engine.last_known_gps[0]
+                    latest_pose["longitude"] = sim_engine.last_known_gps[1]
+
                 latest_pose["altitude"] = round(z, 2)
                 latest_pose["heading_deg"] = round(heading_deg, 1)
-                latest_pose["speed_mps"] = 1.2
+                latest_pose["speed_mps"] = 1.2 if latest_pose["flight_mode"] == "AUTO_SEARCH" else round(math.hypot(sim_engine.manual_vel[0], sim_engine.manual_vel[1]), 2)
+                latest_pose["pitch_deg"] = round(-sim_engine.manual_vel[1] * 8.0, 1)
+                latest_pose["roll_deg"] = round(sim_engine.manual_vel[0] * 8.0, 1)
+                latest_pose["yaw_deg"] = round(heading_deg, 1)
                 latest_pose["stamp"] = {"sec": int(sim_time), "nanosec": int((sim_time % 1) * 1e9)}
 
                 # Broadcast telemetry
@@ -885,17 +950,27 @@ async def handle_websocket(websocket: WebSocket):
                     })
                     continue
 
-            # Handle client commands
+            # Handle client commands with Pydantic validation
             cmd_action = None
             cmd_params = {}
 
             if data.get("type") == "cmd":
-                payload = data.get("payload", {})
-                cmd_action = payload.get("action")
-                cmd_params = payload.get("params", {})
+                raw_payload = data.get("payload", {})
+                try:
+                    cmd_model = WSCommandPayload(**raw_payload)
+                    cmd_action = cmd_model.action
+                    cmd_params = cmd_model.params
+                except ValidationError:
+                    cmd_action = raw_payload.get("action")
+                    cmd_params = raw_payload.get("params", {})
             elif "action" in data:  # Direct command
-                cmd_action = data.get("action")
-                cmd_params = data.get("params", {})
+                try:
+                    cmd_model = WSCommandPayload(**data)
+                    cmd_action = cmd_model.action
+                    cmd_params = cmd_model.params
+                except ValidationError:
+                    cmd_action = data.get("action")
+                    cmd_params = data.get("params", {})
 
             if cmd_action == "start":
                 sim_engine.start()
@@ -910,7 +985,25 @@ async def handle_websocket(websocket: WebSocket):
             elif cmd_action == "disarm":
                 vehicle_sm.disarm()
             elif cmd_action == "emergency_land":
-                sim_engine.emergency_land()
+                report = sim_engine.emergency_land(trigger="OPERATOR_COMMAND")
+                if report:
+                    store.save_safety_report(report.to_dict())
+                    alert_dict = {
+                        "alert_id": f"alert-{report.id}",
+                        "alert_type": "FAILSAFE",
+                        "message": f"Failsafe triggered [{report.trigger}]: {report.outcome}",
+                        "latitude": latest_pose["latitude"],
+                        "longitude": latest_pose["longitude"],
+                        "stamp": latest_pose["stamp"],
+                    }
+                    store.insert(create_event("alert", alert_dict, alert_dict["alert_id"]), synced=hub.is_link_connected)
+                    await hub.broadcast_envelope(hub.build_envelope("alert", alert_dict))
+            elif cmd_action == "manual_input":
+                vx = float(cmd_params.get("vx", 0.0))
+                vy = float(cmd_params.get("vy", 0.0))
+                vz = float(cmd_params.get("vz", 0.0))
+                yaw_rate = float(cmd_params.get("yaw_rate", 0.0))
+                sim_engine.apply_manual_input(vx, vy, vz, yaw_rate)
             elif cmd_action == "link_cut":
                 hub.is_link_connected = False
                 latest_mission_status["link_connected"] = False
@@ -927,7 +1020,9 @@ async def handle_websocket(websocket: WebSocket):
                 if "low_power" in cmd_params:
                     hub.low_power = bool(cmd_params["low_power"])
                 if "mode" in cmd_params:
-                    latest_mission_status["nav_mode"] = cmd_params["mode"]
+                    mode_val = str(cmd_params["mode"])
+                    latest_mission_status["nav_mode"] = mode_val
+                    latest_pose["gps_fix"] = (mode_val != "GPS_DENIED")
             elif cmd_action == "sync":
                 synced = store.mark_all_synced()
                 await websocket.send_json(hub.build_envelope("link_state", {"state": "CONNECTED", "queued_events": 0, "synced_events": synced}))
