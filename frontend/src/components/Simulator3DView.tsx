@@ -586,6 +586,8 @@ export default function Simulator3DView({
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '11px', fontWeight: 600, color: '#38bdf8' }}>Scenario:</span>
             <select
+              id="scenario-select"
+              data-testid="scenario-select"
               value={scenarioId}
               onChange={(e) => handleScenarioChange(e.target.value)}
               style={{

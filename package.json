@@ -10,5 +10,8 @@
     "test:core": "pytest tests/test_aerosar_core.py -v",
     "test:frontend": "npm --prefix frontend test",
     "test": "pytest -v"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
   }
 }

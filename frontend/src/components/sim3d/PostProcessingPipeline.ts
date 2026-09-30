@@ -43,25 +43,25 @@ export class PostProcessingPipeline {
     // 2. Ambient Occlusion (SAO) Pass
     this.saoPass = new SAOPass(scene, camera);
     this.saoPass.params.saoBias = 0.5;
-    this.saoPass.params.saoIntensity = 0.08;
-    this.saoPass.params.saoScale = 2.0;
-    this.saoPass.params.saoKernelRadius = 25;
+    this.saoPass.params.saoIntensity = 0.035; // Gentle contact shadows
+    this.saoPass.params.saoScale = 1.8;
+    this.saoPass.params.saoKernelRadius = 20;
     this.saoPass.params.saoBlur = true;
     this.composer.addPass(this.saoPass);
 
     // 3. Selective Bloom Pass (targeting fire and hot embers)
     this.bloomPass = new UnrealBloomPass(
       new THREE.Vector2(width, height),
-      0.55, // strength
-      0.35, // radius
-      0.82 // threshold (only bright highlights bloom)
+      0.45, // strength
+      0.3, // radius
+      0.88 // threshold (only bright fire core & sparks bloom)
     );
     this.composer.addPass(this.bloomPass);
 
     // 4. Subtle Cinematic Vignette Pass
     this.vignettePass = new ShaderPass(VignetteShader);
-    this.vignettePass.uniforms['offset'].value = 0.98;
-    this.vignettePass.uniforms['darkness'].value = 1.15;
+    this.vignettePass.uniforms['offset'].value = 1.05;
+    this.vignettePass.uniforms['darkness'].value = 0.95;
     this.composer.addPass(this.vignettePass);
 
     // 5. Anti-Aliasing (FXAA) Pass

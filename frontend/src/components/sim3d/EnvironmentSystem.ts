@@ -77,43 +77,43 @@ export class EnvironmentSystem {
       case 'dusk':
         hdriFile = 'dusk_1k.hdr';
         sunColor = 0xff7733;
-        sunIntensity = 1.1;
-        fogColor = 0x2d1d1f;
-        fogDensity = 0.018;
+        sunIntensity = 1.6;
+        fogColor = 0x422d2b;
+        fogDensity = 0.01;
         ambColor = 0xa8776a;
-        ambIntensity = 0.35;
-        exposure = 0.95;
+        ambIntensity = 0.65;
+        exposure = 1.05;
         break;
       case 'night':
         hdriFile = 'night_1k.hdr';
         sunColor = 0x7fa2c7; // Moonlight
-        sunIntensity = 0.35;
-        fogColor = 0x06080e;
-        fogDensity = 0.024;
+        sunIntensity = 0.45;
+        fogColor = 0x090d14;
+        fogDensity = 0.014;
         ambColor = 0x1f2b3d;
-        ambIntensity = 0.15;
-        exposure = 1.25; // Boost camera gain in night mode
+        ambIntensity = 0.25;
+        exposure = 1.35; // Boost camera gain in night mode
         break;
       case 'smoke':
         hdriFile = 'smoke_overcast_1k.hdr';
-        sunColor = 0xcca070; // Filtered through dense particulate
-        sunIntensity = 0.85;
-        fogColor = 0x26211c;
-        fogDensity = 0.035; // Heavy smoke aerial haze
+        sunColor = 0xcca070; // Filtered through particulate
+        sunIntensity = 1.2;
+        fogColor = 0x3d352e;
+        fogDensity = 0.015; // Realistic smoke aerial haze
         ambColor = 0x544738;
-        ambIntensity = 0.3;
-        exposure = 1.05;
+        ambIntensity = 0.55;
+        exposure = 1.1;
         break;
       case 'day':
       default:
         hdriFile = 'overcast_day_1k.hdr';
         sunColor = 0xfff5ea;
-        sunIntensity = 1.4;
-        fogColor = 0x242c38;
-        fogDensity = 0.014;
-        ambColor = 0xcad7e8;
-        ambIntensity = 0.45;
-        exposure = 1.0;
+        sunIntensity = 2.4;
+        fogColor = 0x6e7e91;
+        fogDensity = 0.007; // Clear daylight visibility
+        ambColor = 0xb4c4d6;
+        ambIntensity = 0.85;
+        exposure = 1.15;
         break;
     }
 

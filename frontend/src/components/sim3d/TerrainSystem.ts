@@ -61,20 +61,21 @@ export class TerrainSystem {
 
     // 2. PBR Textures (offline CC0 textures)
     const textureLoader = new THREE.TextureLoader();
-    const loadTex = (path: string, repeat = 8) => {
+    const loadTex = (path: string, repeat = 8, isSrgb = true) => {
       const tex = textureLoader.load(path);
       tex.wrapS = THREE.RepeatWrapping;
       tex.wrapT = THREE.RepeatWrapping;
       tex.repeat.set(repeat, repeat);
+      if (isSrgb) tex.colorSpace = THREE.SRGBColorSpace;
       return tex;
     };
 
-    const dirtDiff = loadTex('/assets/textures/terrain/dirt_diff_1k.jpg', 6);
-    const dirtNor = loadTex('/assets/textures/terrain/dirt_nor_1k.jpg', 6);
-    const dirtRough = loadTex('/assets/textures/terrain/dirt_rough_1k.jpg', 6);
+    const dirtDiff = loadTex('/assets/textures/terrain/dirt_diff_1k.jpg', 6, true);
+    const dirtNor = loadTex('/assets/textures/terrain/dirt_nor_1k.jpg', 6, false);
+    const dirtRough = loadTex('/assets/textures/terrain/dirt_rough_1k.jpg', 6, false);
 
-    const mudDiff = loadTex('/assets/textures/terrain/mud_diff_1k.jpg', 8);
-    const gravelDiff = loadTex('/assets/textures/terrain/gravel_diff_1k.jpg', 8);
+    const mudDiff = loadTex('/assets/textures/terrain/mud_diff_1k.jpg', 8, true);
+    const gravelDiff = loadTex('/assets/textures/terrain/gravel_diff_1k.jpg', 8, true);
 
     // 3. Multi-Texture Splatting Material with Triplanar & Wet Darkening
     this.material = new THREE.MeshStandardMaterial({
@@ -82,8 +83,8 @@ export class TerrainSystem {
       normalMap: dirtNor,
       normalScale: new THREE.Vector2(1.2, 1.2),
       roughnessMap: dirtRough,
-      roughness: 0.92,
-      metalness: 0.08,
+      roughness: 0.88,
+      metalness: 0.05,
     });
 
     this.material.onBeforeCompile = (shader) => {
@@ -96,6 +97,7 @@ export class TerrainSystem {
       shader.vertexShader = shader.vertexShader.replace(
         '#include <common>',
         `#include <common>
+        varying vec2 vTerrainUv;
         varying vec3 vWorldPos;
         varying vec3 vTerrainNormal;`
       );
@@ -103,6 +105,7 @@ export class TerrainSystem {
       shader.vertexShader = shader.vertexShader.replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
+        vTerrainUv = uv;
         vWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
         vTerrainNormal = normal;`
       );
@@ -115,6 +118,7 @@ export class TerrainSystem {
         uniform vec2 uFloodPos;
         uniform vec2 uFirePos;
         uniform vec2 uRuinsPos;
+        varying vec2 vTerrainUv;
         varying vec3 vWorldPos;
         varying vec3 vTerrainNormal;`
       );
@@ -122,9 +126,9 @@ export class TerrainSystem {
       shader.fragmentShader = shader.fragmentShader.replace(
         '#include <map_fragment>',
         `
-        vec4 baseTex = texture2D(map, vUv);
-        vec4 mudTex = texture2D(tMud, vUv * 1.5);
-        vec4 gravelTex = texture2D(tGravel, vUv * 1.5);
+        vec4 baseTex = texture2D(map, vTerrainUv * 6.0);
+        vec4 mudTex = texture2D(tMud, vTerrainUv * 8.0);
+        vec4 gravelTex = texture2D(tGravel, vTerrainUv * 8.0);
 
         // Distance to flood basin (wet mud darkening)
         float dFlood = length(vWorldPos.xz - uFloodPos);
@@ -138,9 +142,11 @@ export class TerrainSystem {
         float dFire = length(vWorldPos.xz - uFirePos);
         float fireWeight = smoothstep(4.5, 0.8, dFire);
 
-        vec3 terrainColor = baseTex.rgb;
-        terrainColor = mix(terrainColor, gravelTex.rgb * 0.95, gravelWeight);
-        terrainColor = mix(terrainColor, mudTex.rgb * 0.65, mudWeight); // wet darkening
+        // Rich disaster terrain palette: earth base with rock speckles
+        vec3 earthBase = vec3(0.38, 0.33, 0.26);
+        vec3 terrainColor = mix(earthBase, baseTex.rgb * 1.25, 0.7);
+        terrainColor = mix(terrainColor, gravelTex.rgb * 1.15, gravelWeight);
+        terrainColor = mix(terrainColor, mudTex.rgb * 0.7, mudWeight); // wet darkening
 
         // Charred ash near fire
         vec3 ashColor = vec3(0.08, 0.07, 0.07);
