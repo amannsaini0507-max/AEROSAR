@@ -5,8 +5,10 @@
   "private": true,
   "scripts": {
     "start": "node scripts/start_aerosar.js",
+    "build": "npm --prefix frontend run build",
     "verify": "node scripts/verify_headless.js",
     "test:core": "pytest tests/test_aerosar_core.py -v",
+    "test:frontend": "npm --prefix frontend test",
     "test": "pytest -v"
   }
 }
