@@ -208,3 +208,22 @@ def test_synthetic_perception_engine():
     dets_repeat = engine.evaluate_candidates(drone_x=5.5, drone_y=-6.8, drone_z=2.2, heading_deg=0.0, sim_time=11.0)
     assert len(dets_repeat) == 0
 
+
+def test_lawnmower_11_lanes_coverage():
+    """Verify that default lawnmower waypoints generate 11 lanes covering -14m to +14m at H=5.0m."""
+    from aerosar_core.trajectory import generate_lawnmower_waypoints
+
+    wps = generate_lawnmower_waypoints()
+    assert len(wps) >= 24
+
+    # Extract distinct y-coordinates for lanes (excluding start/end return points)
+    lane_ys = sorted(list(set(round(wp[1], 2) for wp in wps[1:-2])))
+    assert len(lane_ys) == 11, f"Expected 11 lanes, got {len(lane_ys)}: {lane_ys}"
+    assert lane_ys[0] == -14.0, f"Expected first lane at -14.0, got {lane_ys[0]}"
+    assert lane_ys[-1] == 14.0, f"Expected last lane at 14.0, got {lane_ys[-1]}"
+
+    # Verify altitude
+    for wp in wps[1:-1]:
+        assert wp[2] == 5.0, f"Cruise altitude must be 5.0m, got {wp[2]}"
+
+
