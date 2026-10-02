@@ -22,6 +22,7 @@ export function createInitialModel(source: FeedSource): MissionModel {
     sync: null,
     route: null,
     video: { rgbUrl: null, thermalUrl: null, rgbFrame: null, thermalFrame: null },
+    hoverProgress: null,
     lastMessageAt: null,
     messageCounts: {},
     survivorSeq: 0
@@ -74,6 +75,7 @@ function applyOne(model: MissionModel, msg: ServerMessage, now: number): Mission
             id: d.id,
             confidence: Number(d.confidence) || 0,
             thermalConfirmed: Boolean(d.thermal_confirmed),
+            status: d.status,
             lat: d.latitude,
             lng: d.longitude,
             altitude: d.altitude,
@@ -160,6 +162,7 @@ function applyOne(model: MissionModel, msg: ServerMessage, now: number): Mission
         mission: {
           missionId: s.mission_id,
           state: s.state,
+          substate: s.substate,
           battery: Number(s.battery_percent) || 0,
           coverage: Number(s.coverage_percent) || 0,
           linkConnected,
@@ -169,6 +172,8 @@ function applyOne(model: MissionModel, msg: ServerMessage, now: number): Mission
         }
       };
     }
+    case 'hover_progress':
+      return { ...model, hoverProgress: msg.data };
     case 'telemetry':
     case 'drone_pose': {
       const p = msg.data;

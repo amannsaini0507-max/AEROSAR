@@ -377,34 +377,51 @@ class StandaloneSimulator:
         self.task: Optional[asyncio.Task] = None
         self.sim_time: float = 0.0
 
-        # Lawnmower flight path waypoints in 30x30m arena
-        raw_waypoints = generate_lawnmower_waypoints(
-            x_min=-11.0, x_max=11.0, y_min=-11.0, y_max=11.0, altitude=2.2, lane_spacing=4.5
+        # Lawnmower flight path waypoints in 30x30m arena (11 lanes from -14 to +14m)
+        self.waypoints = generate_lawnmower_waypoints(
+            x_min=-14.0, x_max=14.0, y_min=-14.0, y_max=14.0, altitude=5.0, lane_spacing=2.8
         )
-        self.bspline = UniformCubicBSpline(raw_waypoints)
-        self.progress_u: float = 0.0
+        self.waypoint_index: int = 0
+        self.saved_waypoint_index: int = 0
 
         # Vehicle navigation state
-        self.current_enu = [0.0, 0.0, 1.5]
+        self.current_enu = [0.0, 0.0, 0.5]
+        self.drone_vel = [0.0, 0.0, 0.0]
         self.manual_vel = [0.0, 0.0, 0.0]
         self.last_known_gps = (BASE_LAT, BASE_LON)
+
+        # Verification mode ('demo' or 'realistic')
+        self.verify_mode: str = "demo"
+
+        # Hover-verify sub-state machine:
+        # PATROLLING -> VICTIM_LOCKED -> HOVER_STABILISING -> HOVER_CONFIRMING -> (CONFIRMED | REJECTED) -> RESUME_PATROL
+        self.substate: str = "PATROLLING"
+        self.active_victim: Optional[Dict[str, Any]] = None
+        self.hover_target: Optional[List[float]] = None
+        self.hover_timer: float = 0.0
+        self.hover_stabilise_timer: float = 0.0
+        self.hover_positions: List[Tuple[float, float, float]] = []
+        self.thermal_samples: List[float] = []
+        self.confirmed_victims: set = set()
+        self.rejected_victims: set = set()
 
         # Synthetic perception engine
         self.perception_engine = SyntheticPerceptionEngine(seed=42, fov_radius_m=4.8)
 
-        # Scenario victims & hazards
+        # Scenario hazards
         self.staged_hazards = [
             {"id": "haz-ruins-01", "hazard_type": "damaged_structure", "confidence": 0.90, "enu": (-7.0, 6.0)},
             {"id": "haz-flood-01", "hazard_type": "flood", "confidence": 0.95, "enu": (7.0, 7.0)},
-            {"id": "haz-fire-01", "hazard_type": "fire", "confidence": 0.98, "enu": (6.0, -7.0)},
+            {"id": "haz-fire-01", "hazard_type": "fire", "confidence": 0.98, "enu": (5.5, 6.5)},
         ]
+        # Scenario victims & mannequin test object
         self.staged_victims = [
-            {"id": "victim_1", "confidence": 0.50, "thermal": False, "enu": (-6.8, 6.2), "desc": "Collapsed Ruins Victim"},
-            {"id": "victim_2", "confidence": 0.52, "thermal": False, "enu": (7.2, 6.8), "desc": "Flooded Basin Survivor"},
-            {"id": "victim_3", "confidence": 0.88, "thermal": True, "enu": (5.5, -6.8), "desc": "Fire Zone Critical Survivor"},
+            {"id": "victim_1", "confidence": 0.50, "thermal": True, "temp_c": 36.5, "enu": (-6.8, 6.2, 0.2), "desc": "Collapsed Ruins Victim"},
+            {"id": "victim_2", "confidence": 0.52, "thermal": True, "temp_c": 36.4, "enu": (7.2, 7.0, 0.2), "desc": "Flooded Basin Survivor"},
+            {"id": "victim_3", "confidence": 0.95, "thermal": True, "temp_c": 37.1, "enu": (4.2, 5.8, 0.2), "desc": "Fire Zone Critical Survivor"},
+            {"id": "mannequin_01", "confidence": 0.75, "thermal": False, "temp_c": 18.5, "enu": (-2.0, 0.0, 0.2), "desc": "Mannequin Test Object (Non-biological / Cold)"},
         ]
         self.triggered_hazards = set()
-        self.triggered_victims = set()
 
     def start(self):
         if not self.running:
@@ -412,6 +429,7 @@ class StandaloneSimulator:
             vehicle_sm.arm()
             vehicle_sm.start_flight()
             latest_mission_status["state"] = "SEARCHING"
+            latest_mission_status["substate"] = "PATROLLING"
             latest_pose["flight_mode"] = "AUTO_SEARCH"
 
     def pause(self):
@@ -419,11 +437,17 @@ class StandaloneSimulator:
 
     def resume(self):
         latest_mission_status["state"] = "SEARCHING"
+        if latest_pose["flight_mode"] == "AUTO_SEARCH":
+            latest_mission_status["substate"] = self.substate
 
     def rtl(self):
         vehicle_sm.return_to_launch()
         latest_mission_status["state"] = "RETURNING"
+        latest_mission_status["substate"] = "PATROLLING"
         latest_pose["flight_mode"] = "RTL"
+        self.substate = "PATROLLING"
+        self.active_victim = None
+        self.hover_timer = 0.0
 
     def emergency_land(self, trigger: str = "OPERATOR_COMMAND") -> Optional[SafetyReport]:
         _, report = vehicle_sm.trigger_failsafe(
@@ -433,13 +457,40 @@ class StandaloneSimulator:
             outcome="Operator emergency landing initiated; descent engaged.",
         )
         latest_mission_status["state"] = "EMERGENCY_LAND"
+        latest_mission_status["substate"] = "EMERGENCY_LAND"
         latest_pose["flight_mode"] = "EMERGENCY_LAND"
+        self.substate = "EMERGENCY_LAND"
+        self.active_victim = None
+        self.hover_timer = 0.0
         return report
 
     def apply_manual_input(self, vx: float, vy: float, vz: float, yaw_rate: float = 0.0):
         self.manual_vel = [float(vx), float(vy), float(vz)]
-        if math.hypot(vx, vy) > 0.01:
+        if math.hypot(vx, vy) > 0.01 or abs(vz) > 0.01:
             latest_pose["flight_mode"] = "MANUAL"
+            latest_mission_status["substate"] = "MANUAL"
+            # Manual override immediately cancels any hover lock in 1 frame
+            if self.substate != "PATROLLING":
+                self.substate = "PATROLLING"
+                self.active_victim = None
+                self.hover_timer = 0.0
+                self.hover_target = None
+
+    def set_flight_mode(self, mode: str):
+        if mode == "MANUAL":
+            latest_pose["flight_mode"] = "MANUAL"
+            latest_mission_status["substate"] = "MANUAL"
+            if self.substate != "PATROLLING":
+                self.substate = "PATROLLING"
+                self.active_victim = None
+                self.hover_timer = 0.0
+                self.hover_target = None
+        else:
+            latest_pose["flight_mode"] = "AUTO_SEARCH"
+            self.substate = "PATROLLING"
+            latest_mission_status["substate"] = "PATROLLING"
+            # Resumes search from saved waypoint index
+            self.waypoint_index = self.saved_waypoint_index
 
 
 sim_engine = StandaloneSimulator()
@@ -471,29 +522,319 @@ async def standalone_sim_loop():
             # Update drone position
             state = vehicle_sm.state
             if state == VehicleState.IN_FLIGHT and latest_mission_status["state"] in ("SEARCHING", "PAUSED"):
+                is_paused = (latest_mission_status["state"] == "PAUSED")
+
                 if latest_pose["flight_mode"] == "MANUAL" and any(abs(v) > 0.01 for v in sim_engine.manual_vel):
                     # Manual flight mode velocity integration
-                    sim_engine.current_enu[0] = max(-14.0, min(14.0, sim_engine.current_enu[0] + sim_engine.manual_vel[0] * dt))
-                    sim_engine.current_enu[1] = max(-14.0, min(14.0, sim_engine.current_enu[1] + sim_engine.manual_vel[1] * dt))
+                    sim_engine.current_enu[0] = max(-14.8, min(14.8, sim_engine.current_enu[0] + sim_engine.manual_vel[0] * dt))
+                    sim_engine.current_enu[1] = max(-14.8, min(14.8, sim_engine.current_enu[1] + sim_engine.manual_vel[1] * dt))
                     sim_engine.current_enu[2] = max(0.5, min(15.0, sim_engine.current_enu[2] + sim_engine.manual_vel[2] * dt))
                     x, y, z = sim_engine.current_enu
                     heading_rad = math.atan2(sim_engine.manual_vel[0], sim_engine.manual_vel[1]) if math.hypot(sim_engine.manual_vel[0], sim_engine.manual_vel[1]) > 0.1 else 0.0
                     heading_deg = (math.degrees(heading_rad) + 360.0) % 360.0
+
                 elif latest_mission_status["state"] == "SEARCHING":
-                    # Autonomous lawnmower sweep along B-spline
-                    sim_engine.progress_u = min(1.0, sim_engine.progress_u + (dt * 0.015))
-                    x, y, z = sim_engine.bspline.evaluate(sim_engine.progress_u)
+                    x, y, z = sim_engine.current_enu
 
-                    # Add local reactive repulsive avoidance force
-                    rfx, rfy, rfz = potential_field.compute_repulsive_force((x, y, z))
-                    x += rfx * 0.3
-                    y += rfy * 0.3
-                    z += rfz * 0.3
-                    sim_engine.current_enu = [x, y, z]
+                    # Sub-state machine execution (PATROLLING -> VICTIM_LOCKED -> HOVER_STABILISING -> HOVER_CONFIRMING -> CONFIRMED/REJECTED -> RESUME_PATROL)
+                    if sim_engine.substate == "PATROLLING":
+                        # Follow waypoints at cruise altitude 5.0m, speed 2.5m/s
+                        if sim_engine.waypoint_index >= len(sim_engine.waypoints):
+                            sim_engine.rtl()
+                            target_wp = (0.0, 0.0, 5.0)
+                        else:
+                            target_wp = sim_engine.waypoints[sim_engine.waypoint_index]
 
-                    next_x, next_y, _ = sim_engine.bspline.evaluate(min(1.0, sim_engine.progress_u + 0.005))
-                    heading_rad = math.atan2(next_x - x, next_y - y)
-                    heading_deg = (math.degrees(heading_rad) + 360.0) % 360.0
+                        wp_dx = target_wp[0] - x
+                        wp_dy = target_wp[1] - y
+                        wp_dz = target_wp[2] - z
+                        dist_to_wp = math.hypot(wp_dx, wp_dy)
+
+                        # Advance waypoint when close
+                        if dist_to_wp < 0.6:
+                            sim_engine.waypoint_index = min(len(sim_engine.waypoints) - 1, sim_engine.waypoint_index + 1)
+                            sim_engine.saved_waypoint_index = sim_engine.waypoint_index
+                            target_wp = sim_engine.waypoints[sim_engine.waypoint_index]
+                            wp_dx = target_wp[0] - x
+                            wp_dy = target_wp[1] - y
+                            wp_dz = target_wp[2] - z
+                            dist_to_wp = math.hypot(wp_dx, wp_dy)
+
+                        # Slow slightly in turns
+                        target_speed = 1.8 if dist_to_wp < 1.2 else 2.5
+                        desired_vx = (wp_dx / max(0.01, dist_to_wp)) * target_speed
+                        desired_vy = (wp_dy / max(0.01, dist_to_wp)) * target_speed
+                        desired_vz = max(-1.5, min(1.5, wp_dz * 2.0))
+
+                        # Jerk-limited first-order velocity tracking
+                        sim_engine.drone_vel[0] += (desired_vx - sim_engine.drone_vel[0]) * min(1.0, dt * 5.0)
+                        sim_engine.drone_vel[1] += (desired_vy - sim_engine.drone_vel[1]) * min(1.0, dt * 5.0)
+                        sim_engine.drone_vel[2] += (desired_vz - sim_engine.drone_vel[2]) * min(1.0, dt * 5.0)
+
+                        # Add obstacle avoidance repulsive force
+                        rfx, rfy, rfz = potential_field.compute_repulsive_force((x, y, z))
+                        actual_vx = sim_engine.drone_vel[0] + rfx * 0.3
+                        actual_vy = sim_engine.drone_vel[1] + rfy * 0.3
+                        actual_vz = sim_engine.drone_vel[2] + rfz * 0.3
+
+                        x = max(-14.8, min(14.8, x + actual_vx * dt))
+                        y = max(-14.8, min(14.8, y + actual_vy * dt))
+                        z = max(0.5, min(15.0, z + actual_vz * dt))
+                        sim_engine.current_enu = [x, y, z]
+
+                        heading_rad = math.atan2(actual_vx, actual_vy) if math.hypot(actual_vx, actual_vy) > 0.05 else 0.0
+                        heading_deg = (math.degrees(heading_rad) + 360.0) % 360.0
+
+                        # Check detection triggers for un-handled candidates
+                        fov_radius = z * math.tan(math.radians(36.0)) # ~3.63m at 5.0m
+                        best_vic = None
+                        best_dist = 999.0
+
+                        for vic in sim_engine.staged_victims:
+                            vic_id = vic["id"]
+                            if vic_id in sim_engine.confirmed_victims or vic_id in sim_engine.rejected_victims:
+                                continue
+                            vx, vy, _ = vic["enu"]
+                            h_dist = math.hypot(x - vx, y - vy)
+                            # Demo trigger: inside ground footprint AND horizontal dist < 2.5m
+                            if h_dist <= fov_radius and h_dist < 2.5:
+                                if h_dist < best_dist:
+                                    best_dist = h_dist
+                                    best_vic = vic
+
+                        if best_vic is not None:
+                            # 1. VICTIM_LOCKED: freeze waypoint progression, save waypointIndex
+                            sim_engine.substate = "VICTIM_LOCKED"
+                            sim_engine.active_victim = best_vic
+                            sim_engine.saved_waypoint_index = sim_engine.waypoint_index
+
+                            # 2. Compute hover point: Y=4.0m, >=2m from fire hazard, above obstacle
+                            vx, vy, _ = best_vic["enu"]
+                            hover_x, hover_y, hover_z = vx, vy, 4.0
+
+                            # Fire hazard clearance (stay >= 2m horizontally from fire at 5.5, 6.5)
+                            fire_dist = math.hypot(vx - 5.5, vy - 6.5)
+                            if fire_dist < 2.0:
+                                f_dx, f_dy = vx - 5.5, vy - 6.5
+                                f_mag = max(0.01, math.hypot(f_dx, f_dy))
+                                hover_x = 5.5 + (f_dx / f_mag) * 2.1
+                                hover_y = 6.5 + (f_dy / f_mag) * 2.1
+
+                            sim_engine.hover_target = [hover_x, hover_y, hover_z]
+                            sim_engine.hover_stabilise_timer = 0.0
+                            sim_engine.substate = "HOVER_STABILISING"
+
+                            await hub.broadcast_envelope(hub.build_envelope("hover_progress", {
+                                "victim_id": best_vic["id"],
+                                "elapsed": 0.0,
+                                "total": 5.5,
+                                "state": "HOVER_STABILISING",
+                            }))
+
+                    elif sim_engine.substate == "HOVER_STABILISING":
+                        # Move to hover point smoothly without teleporting
+                        target_x, target_y, target_z = sim_engine.hover_target
+                        hx_dx = target_x - x
+                        hx_dy = target_y - y
+                        hx_dz = target_z - z
+                        pos_error = math.hypot(hx_dx, math.hypot(hx_dy, hx_dz))
+                        curr_speed = math.hypot(sim_engine.drone_vel[0], math.hypot(sim_engine.drone_vel[1], sim_engine.drone_vel[2]))
+
+                        desired_speed = min(1.8, pos_error * 1.6)
+                        desired_vx = (hx_dx / max(0.01, pos_error)) * desired_speed
+                        desired_vy = (hx_dy / max(0.01, pos_error)) * desired_speed
+                        desired_vz = (hx_dz / max(0.01, pos_error)) * desired_speed
+
+                        sim_engine.drone_vel[0] += (desired_vx - sim_engine.drone_vel[0]) * min(1.0, dt * 6.0)
+                        sim_engine.drone_vel[1] += (desired_vy - sim_engine.drone_vel[1]) * min(1.0, dt * 6.0)
+                        sim_engine.drone_vel[2] += (desired_vz - sim_engine.drone_vel[2]) * min(1.0, dt * 6.0)
+
+                        x += sim_engine.drone_vel[0] * dt
+                        y += sim_engine.drone_vel[1] * dt
+                        z += sim_engine.drone_vel[2] * dt
+                        sim_engine.current_enu = [x, y, z]
+
+                        # Point heading toward victim
+                        vic = sim_engine.active_victim
+                        heading_deg = (math.degrees(math.atan2(vic["enu"][0] - x, vic["enu"][1] - y)) + 360.0) % 360.0
+
+                        if not is_paused:
+                            sim_engine.hover_stabilise_timer += dt
+
+                        # 3. HOVER_STABILISING check: error < 0.3m and speed < 0.2m/s
+                        if pos_error < 0.3 and curr_speed < 0.2:
+                            sim_engine.substate = "HOVER_CONFIRMING"
+                            sim_engine.hover_timer = 0.0
+                            sim_engine.hover_positions = []
+                            sim_engine.thermal_samples = []
+                            await hub.broadcast_envelope(hub.build_envelope("hover_progress", {
+                                "victim_id": vic["id"],
+                                "elapsed": 0.0,
+                                "total": 5.5,
+                                "state": "HOVER_CONFIRMING",
+                            }))
+                        elif sim_engine.hover_stabilise_timer >= 10.0:
+                            # 10s stabilisation timeout: abort to RESUME_PATROL
+                            sim_engine.substate = "RESUME_PATROL"
+
+                    elif sim_engine.substate == "HOVER_CONFIRMING":
+                        # 4. HOVER_CONFIRMING (5.5 s sim time): freeze position, sample thermal signature
+                        sim_engine.drone_vel = [0.0, 0.0, 0.0]
+                        vic = sim_engine.active_victim
+                        heading_deg = (math.degrees(math.atan2(vic["enu"][0] - x, vic["enu"][1] - y)) + 360.0) % 360.0
+
+                        if not is_paused:
+                            sim_engine.hover_timer += dt
+                            sim_engine.hover_positions.append((x, y, z))
+                            # Sample thermal render target simulation
+                            sample_temp = vic.get("temp_c", 36.5 if vic.get("thermal") else 18.5)
+                            sim_engine.thermal_samples.append(sample_temp)
+
+                        # Broadcast live hover progress each frame
+                        await hub.broadcast_envelope(hub.build_envelope("hover_progress", {
+                            "victim_id": vic["id"],
+                            "elapsed": round(min(5.5, sim_engine.hover_timer), 2),
+                            "total": 5.5,
+                            "state": "HOVER_CONFIRMING",
+                        }))
+
+                        if sim_engine.hover_timer >= 5.5:
+                            # Check thermal samples: >=80% in human range (30 - 40 C)
+                            human_samples = sum(1 for s in sim_engine.thermal_samples if 30.0 <= s <= 40.0)
+                            ratio = human_samples / max(1, len(sim_engine.thermal_samples))
+
+                            if ratio >= 0.80 and vic.get("thermal", False):
+                                # 5. CONFIRMED: lock geotag, thermal_confirmed = True, risk score, alert
+                                sim_engine.confirmed_victims.add(vic["id"])
+                                avg_x = sum(p[0] for p in sim_engine.hover_positions) / len(sim_engine.hover_positions)
+                                avg_y = sum(p[1] for p in sim_engine.hover_positions) / len(sim_engine.hover_positions)
+                                vlat, vlon, _ = enu_to_geodetic(avg_x, avg_y)
+
+                                det_dict = {
+                                    "id": vic["id"],
+                                    "detection_type": "person",
+                                    "confidence": vic["confidence"],
+                                    "bbox_x": 0.45,
+                                    "bbox_y": 0.45,
+                                    "bbox_w": 0.10,
+                                    "bbox_h": 0.15,
+                                    "thermal_confirmed": True,
+                                    "status": "CONFIRMED",
+                                    "latitude": round(vlat, 7),
+                                    "longitude": round(vlon, 7),
+                                    "altitude": 0.0,
+                                    "stamp": latest_pose["stamp"],
+                                }
+                                store.insert(create_event("detection", det_dict, vic["id"]), synced=hub.is_link_connected)
+                                await hub.broadcast_envelope(hub.build_envelope("detection", det_dict))
+
+                                hazards = [r["payload"] for r in store.list("hazard")]
+                                detections = [r["payload"] for r in store.list("detection")]
+                                risk_res = core_score_detection(det_dict, hazards, detections)
+
+                                risk_dict = {
+                                    "detection_id": risk_res.detection_id,
+                                    "score": risk_res.score,
+                                    "priority_level": risk_res.priority_level,
+                                    "reason": risk_res.reason,
+                                    "explain": risk_res.explain,
+                                }
+                                store.insert(EventIn(event_id=f"risk-{vic['id']}", event_type="risk_score", payload=risk_dict), synced=hub.is_link_connected)
+                                await hub.broadcast_envelope(hub.build_envelope("risk", risk_dict))
+
+                                all_risks = sorted(store.list("risk_score"), key=lambda r: r["payload"]["score"], reverse=True)
+                                await hub.broadcast_envelope(hub.build_envelope("priority", {"ranked": [r["payload"] for r in all_risks]}))
+
+                                safe_path = route_planner.plan_path(BASE_LAT, BASE_LON, vlat, vlon)
+                                await hub.broadcast_envelope(hub.build_envelope("route", {"survivor_id": vic["id"], "points": safe_path}))
+
+                                alert_type = "CRITICAL_PRIORITY" if risk_res.priority_level == "CRITICAL" else "SURVIVOR_DETECTED"
+                                alert_dict = {
+                                    "alert_id": f"alert-{vic['id']}",
+                                    "alert_type": alert_type,
+                                    "message": f"{vic['desc']} ({risk_res.priority_level}): {risk_res.reason}",
+                                    "latitude": round(vlat, 7),
+                                    "longitude": round(vlon, 7),
+                                    "stamp": latest_pose["stamp"],
+                                }
+                                store.insert(create_event("alert", alert_dict, alert_dict["alert_id"]), synced=hub.is_link_connected)
+                                await hub.broadcast_envelope(hub.build_envelope("alert", alert_dict))
+
+                                await hub.broadcast_envelope(hub.build_envelope("hover_progress", {
+                                    "victim_id": vic["id"],
+                                    "elapsed": 5.5,
+                                    "total": 5.5,
+                                    "state": "CONFIRMED",
+                                }))
+                            else:
+                                # REJECTED: mannequin, debris, fire glow; added to blacklist
+                                sim_engine.rejected_victims.add(vic["id"])
+                                vlat, vlon, _ = enu_to_geodetic(vic["enu"][0], vic["enu"][1])
+
+                                det_dict = {
+                                    "id": vic["id"],
+                                    "detection_type": "person",
+                                    "confidence": vic["confidence"],
+                                    "bbox_x": 0.45,
+                                    "bbox_y": 0.45,
+                                    "bbox_w": 0.10,
+                                    "bbox_h": 0.15,
+                                    "thermal_confirmed": False,
+                                    "status": "REJECTED",
+                                    "latitude": round(vlat, 7),
+                                    "longitude": round(vlon, 7),
+                                    "altitude": 0.0,
+                                    "stamp": latest_pose["stamp"],
+                                }
+                                store.insert(create_event("detection", det_dict, vic["id"]), synced=hub.is_link_connected)
+                                await hub.broadcast_envelope(hub.build_envelope("detection", det_dict))
+
+                                alert_dict = {
+                                    "alert_id": f"alert-rejected-{vic['id']}",
+                                    "alert_type": "INFO",
+                                    "message": f"Target {vic['id']} REJECTED: NO THERMAL MATCH (mannequin / non-biological)",
+                                    "latitude": round(vlat, 7),
+                                    "longitude": round(vlon, 7),
+                                    "stamp": latest_pose["stamp"],
+                                }
+                                store.insert(create_event("alert", alert_dict, alert_dict["alert_id"]), synced=hub.is_link_connected)
+                                await hub.broadcast_envelope(hub.build_envelope("alert", alert_dict))
+
+                                await hub.broadcast_envelope(hub.build_envelope("hover_progress", {
+                                    "victim_id": vic["id"],
+                                    "elapsed": 5.5,
+                                    "total": 5.5,
+                                    "state": "REJECTED",
+                                }))
+
+                            # Transition to RESUME_PATROL
+                            sim_engine.substate = "RESUME_PATROL"
+
+                    elif sim_engine.substate == "RESUME_PATROL":
+                        # 6. RESUME_PATROL: climb back to H=5.0m and rejoin saved waypoint
+                        target_wp = sim_engine.waypoints[min(len(sim_engine.waypoints) - 1, sim_engine.saved_waypoint_index)]
+                        dz = 5.0 - z
+                        sim_engine.drone_vel[2] += (dz * 2.0 - sim_engine.drone_vel[2]) * min(1.0, dt * 4.0)
+                        z += sim_engine.drone_vel[2] * dt
+
+                        wp_dx = target_wp[0] - x
+                        wp_dy = target_wp[1] - y
+                        dist_to_wp = math.hypot(wp_dx, wp_dy)
+                        desired_vx = (wp_dx / max(0.01, dist_to_wp)) * 2.2
+                        desired_vy = (wp_dy / max(0.01, dist_to_wp)) * 2.2
+
+                        sim_engine.drone_vel[0] += (desired_vx - sim_engine.drone_vel[0]) * min(1.0, dt * 4.0)
+                        sim_engine.drone_vel[1] += (desired_vy - sim_engine.drone_vel[1]) * min(1.0, dt * 4.0)
+
+                        x += sim_engine.drone_vel[0] * dt
+                        y += sim_engine.drone_vel[1] * dt
+                        sim_engine.current_enu = [x, y, z]
+
+                        if z >= 4.7:
+                            sim_engine.substate = "PATROLLING"
+                            sim_engine.waypoint_index = sim_engine.saved_waypoint_index
+                            sim_engine.active_victim = None
+                            sim_engine.hover_target = None
                 else:
                     x, y, z = sim_engine.current_enu
                     heading_deg = latest_pose["heading_deg"]
@@ -503,7 +844,9 @@ async def standalone_sim_loop():
                 # Battery drain model
                 latest_pose["battery_percent"] = max(5.0, round(98.5 - (sim_time * 0.12), 1))
                 latest_mission_status["battery_percent"] = latest_pose["battery_percent"]
-                latest_mission_status["coverage_percent"] = round(sim_engine.progress_u * 100.0, 1)
+                total_wps = max(1, len(sim_engine.waypoints) - 1)
+                latest_mission_status["coverage_percent"] = round((sim_engine.waypoint_index / total_wps) * 100.0, 1)
+                latest_mission_status["substate"] = sim_engine.substate
 
                 # GPS sensor model: Gaussian noise if GPS active; frozen if GPS-denied
                 if latest_mission_status["nav_mode"] == "GPS_DENIED":
@@ -519,9 +862,9 @@ async def standalone_sim_loop():
 
                 latest_pose["altitude"] = round(z, 2)
                 latest_pose["heading_deg"] = round(heading_deg, 1)
-                latest_pose["speed_mps"] = 1.2 if latest_pose["flight_mode"] == "AUTO_SEARCH" else round(math.hypot(sim_engine.manual_vel[0], sim_engine.manual_vel[1]), 2)
-                latest_pose["pitch_deg"] = round(-sim_engine.manual_vel[1] * 8.0, 1)
-                latest_pose["roll_deg"] = round(sim_engine.manual_vel[0] * 8.0, 1)
+                latest_pose["speed_mps"] = round(math.hypot(sim_engine.drone_vel[0], math.hypot(sim_engine.drone_vel[1], sim_engine.drone_vel[2])), 2)
+                latest_pose["pitch_deg"] = round(-sim_engine.drone_vel[1] * 4.0, 1)
+                latest_pose["roll_deg"] = round(sim_engine.drone_vel[0] * 4.0, 1)
                 latest_pose["yaw_deg"] = round(heading_deg, 1)
                 latest_pose["stamp"] = {"sec": int(sim_time), "nanosec": int((sim_time % 1) * 1e9)}
 
@@ -555,67 +898,6 @@ async def standalone_sim_loop():
                                 "message": f"{haz['hazard_type'].upper()} hazard classified in sector",
                                 "latitude": round(hlat, 7),
                                 "longitude": round(hlon, 7),
-                                "stamp": latest_pose["stamp"],
-                            }
-                            store.insert(create_event("alert", alert_dict, alert_dict["alert_id"]), synced=hub.is_link_connected)
-                            await hub.broadcast_envelope(hub.build_envelope("alert", alert_dict))
-
-                # Check proximity triggers for staged victims
-                for vic in sim_engine.staged_victims:
-                    if vic["id"] not in sim_engine.triggered_victims:
-                        vx, vy = vic["enu"]
-                        dist = math.hypot(x - vx, y - vy)
-                        if dist <= 4.0:
-                            sim_engine.triggered_victims.add(vic["id"])
-                            vlat, vlon, _ = enu_to_geodetic(vx, vy)
-                            det_dict = {
-                                "id": vic["id"],
-                                "detection_type": "person",
-                                "confidence": vic["confidence"],
-                                "bbox_x": 0.45,
-                                "bbox_y": 0.45,
-                                "bbox_w": 0.10,
-                                "bbox_h": 0.15,
-                                "thermal_confirmed": vic["thermal"],
-                                "latitude": round(vlat, 7),
-                                "longitude": round(vlon, 7),
-                                "altitude": 0.0,
-                                "stamp": latest_pose["stamp"],
-                            }
-                            store.insert(create_event("detection", det_dict, vic["id"]), synced=hub.is_link_connected)
-                            await hub.broadcast_envelope(hub.build_envelope("detection", det_dict))
-
-                            # Score detection using pure-Python risk engine
-                            hazards = [r["payload"] for r in store.list("hazard")]
-                            detections = [r["payload"] for r in store.list("detection")]
-                            risk_res = core_score_detection(det_dict, hazards, detections)
-
-                            risk_dict = {
-                                "detection_id": risk_res.detection_id,
-                                "score": risk_res.score,
-                                "priority_level": risk_res.priority_level,
-                                "reason": risk_res.reason,
-                                "explain": risk_res.explain,
-                            }
-                            store.insert(EventIn(event_id=f"risk-{vic['id']}", event_type="risk_score", payload=risk_dict), synced=hub.is_link_connected)
-                            await hub.broadcast_envelope(hub.build_envelope("risk", risk_dict))
-
-                            # Priority ranking
-                            all_risks = sorted(store.list("risk_score"), key=lambda r: r["payload"]["score"], reverse=True)
-                            await hub.broadcast_envelope(hub.build_envelope("priority", {"ranked": [r["payload"] for r in all_risks]}))
-
-                            # Safe route
-                            safe_path = route_planner.plan_path(BASE_LAT, BASE_LON, vlat, vlon)
-                            await hub.broadcast_envelope(hub.build_envelope("route", {"survivor_id": vic["id"], "points": safe_path}))
-
-                            # Alert dispatch
-                            alert_type = "CRITICAL_PRIORITY" if risk_res.priority_level == "CRITICAL" else "SURVIVOR_DETECTED"
-                            alert_dict = {
-                                "alert_id": f"alert-{vic['id']}",
-                                "alert_type": alert_type,
-                                "message": f"{vic['desc']} ({risk_res.priority_level}): {risk_res.reason}",
-                                "latitude": round(vlat, 7),
-                                "longitude": round(vlon, 7),
                                 "stamp": latest_pose["stamp"],
                             }
                             store.insert(create_event("alert", alert_dict, alert_dict["alert_id"]), synced=hub.is_link_connected)
@@ -1023,11 +1305,14 @@ async def handle_websocket(websocket: WebSocket):
                     mode_val = str(cmd_params["mode"])
                     latest_mission_status["nav_mode"] = mode_val
                     latest_pose["gps_fix"] = (mode_val != "GPS_DENIED")
+            elif cmd_action == "set_flight_mode":
+                flight_mode = str(cmd_params.get("mode", "AUTONOMOUS")).upper()
+                sim_engine.set_flight_mode(flight_mode)
             elif cmd_action == "sync":
                 synced = store.mark_all_synced()
                 await websocket.send_json(hub.build_envelope("link_state", {"state": "CONNECTED", "queued_events": 0, "synced_events": synced}))
             elif cmd_action == "fast_forward":
-                sim_engine.progress_u = float(cmd_params.get("progress", 0.23))
+                sim_engine.waypoint_index = int(cmd_params.get("waypoint_index", 2))
 
     except WebSocketDisconnect:
         if websocket in hub.clients:

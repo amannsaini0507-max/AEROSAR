@@ -28,6 +28,7 @@ export interface DetectionMsg {
   bbox_w?: number;
   bbox_h?: number;
   thermal_confirmed: boolean;
+  status?: 'UNCONFIRMED' | 'VERIFYING' | 'CONFIRMED' | 'REJECTED';
   latitude: number;
   longitude: number;
   altitude?: number;
@@ -73,6 +74,7 @@ export interface AlertMsg {
 export interface MissionStatusMsg {
   mission_id: string;
   state: MissionStateName;
+  substate?: string;
   battery_percent: number;
   coverage_percent: number;
   link_connected: boolean;
@@ -117,6 +119,13 @@ export interface VideoFrameMsg {
   jpeg_base64: string;
 }
 
+export interface HoverProgressMsg {
+  victim_id: string;
+  elapsed: number;
+  total: number;
+  state: string;
+}
+
 export type ServerMessage =
   | { type: 'detection'; data: DetectionMsg }
   | { type: 'hazard'; data: HazardMsg }
@@ -125,6 +134,7 @@ export type ServerMessage =
   | { type: 'priority'; data: PriorityMsg }
   | { type: 'alert'; data: AlertMsg }
   | { type: 'mission_status'; data: MissionStatusMsg }
+  | { type: 'hover_progress'; data: HoverProgressMsg }
   | { type: 'telemetry'; data: DronePoseMsg }
   | { type: 'drone_pose'; data: DronePoseMsg }
   | { type: 'link_state'; data: SyncStatusMsg }
@@ -142,6 +152,7 @@ export interface Survivor {
   id: string;
   confidence: number;
   thermalConfirmed: boolean;
+  status?: 'UNCONFIRMED' | 'VERIFYING' | 'CONFIRMED' | 'REJECTED';
   lat: number;
   lng: number;
   altitude?: number;
@@ -184,6 +195,7 @@ export interface AlertItem {
 export interface MissionStatus {
   missionId: string;
   state: MissionStateName;
+  substate?: string;
   battery: number;
   coverage: number;
   linkConnected: boolean;
@@ -228,6 +240,7 @@ export interface MissionModel {
   sync: SyncStatusMsg | null;
   route: RouteMsg | null;
   video: VideoState;
+  hoverProgress?: HoverProgressMsg | null;
   lastMessageAt: number | null;
   messageCounts: Record<string, number>;
   survivorSeq: number;

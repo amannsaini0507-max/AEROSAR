@@ -15,7 +15,8 @@
   "victims": [
     { "id": "victim_3", "name": "Critical Fire Survivor (victim_3)", "position": [4.2, 0.22, 5.8], "pose": "prone", "clothing": "#c93b3b", "temp_c": 37.1 },
     { "id": "survivor_flood", "name": "Flood Edge Survivor", "position": [3.8, 0.2, -4.2], "pose": "seated", "clothing": "#2b5c8f", "temp_c": 36.4 },
-    { "id": "offline_survivor_01", "name": "Rubble Survivor", "position": [-5.8, 0.35, -4.6], "pose": "trapped", "clothing": "#3d7a5a", "temp_c": 36.6 }
+    { "id": "offline_survivor_01", "name": "Rubble Survivor", "position": [-5.8, 0.35, -4.6], "pose": "trapped", "clothing": "#3d7a5a", "temp_c": 36.6 },
+    { "id": "mannequin_01", "name": "Mannequin Test Object (Non-biological)", "position": [-2.0, 0.2, 0.0], "pose": "seated", "clothing": "#94a3b8", "temp_c": 18.5 }
   ],
   "hazards": [
     { "id": "hazard_fire", "type": "fire", "position": [5.5, 0, 6.5], "radius": 4.0, "confidence": 0.95 },

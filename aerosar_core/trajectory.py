@@ -11,25 +11,28 @@ from typing import List, Tuple
 
 
 def generate_lawnmower_waypoints(
-    x_min: float = -12.0,
-    x_max: float = 12.0,
-    y_min: float = -12.0,
-    y_max: float = 12.0,
-    altitude: float = 2.0,
-    lane_spacing: float = 4.0,
+    x_min: float = -14.0,
+    x_max: float = 14.0,
+    y_min: float = -14.0,
+    y_max: float = 14.0,
+    altitude: float = 5.0,
+    lane_spacing: float = 2.8,
 ) -> List[Tuple[float, float, float]]:
     """
     Generates deterministic serpentine (lawnmower) 3D waypoints over the search arena.
     Returns list of (x, y, z) in local ENU meters.
+    Default parameters cover the 30m x 30m arena with 11 lanes from -14m to +14m at altitude 5.0m.
     """
     waypoints: List[Tuple[float, float, float]] = []
-    # Start at home origin, ascend
+    # Start at home origin, ascend to cruise altitude
     waypoints.append((0.0, 0.0, altitude))
 
-    current_y = y_min
+    # Calculate exact number of lanes to guarantee inclusive coverage of [-14, 14]
+    num_lanes = int(round((y_max - y_min) / lane_spacing)) + 1
     sweep_east = True
 
-    while current_y <= y_max + 0.1:
+    for i in range(num_lanes):
+        current_y = round(y_min + i * lane_spacing, 4)
         if sweep_east:
             waypoints.append((x_min, current_y, altitude))
             waypoints.append((x_max, current_y, altitude))
@@ -37,10 +40,10 @@ def generate_lawnmower_waypoints(
             waypoints.append((x_max, current_y, altitude))
             waypoints.append((x_min, current_y, altitude))
         sweep_east = not sweep_east
-        current_y += lane_spacing
 
     # Return leg to home
     waypoints.append((0.0, 0.0, altitude))
+    waypoints.append((0.0, 0.0, 0.5))
     return waypoints
 
 

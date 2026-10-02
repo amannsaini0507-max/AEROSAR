@@ -43,6 +43,7 @@ class Detection(APIModel):
     bbox_w: float = 0
     bbox_h: float = 0
     thermal_confirmed: bool = False
+    status: Literal["UNCONFIRMED", "VERIFYING", "CONFIRMED", "REJECTED"] = "UNCONFIRMED"
     latitude: float
     longitude: float
     altitude: float = 0
@@ -79,6 +80,7 @@ class Hazard(APIModel):
 class MissionStatus(APIModel):
     mission_id: str = "search-01"
     state: str = "IDLE"
+    substate: Optional[str] = "PATROLLING"
     battery_percent: float = Field(ge=0, le=100)
     coverage_percent: float = Field(ge=0, le=100)
     link_connected: bool = True
@@ -91,9 +93,16 @@ class MissionStatus(APIModel):
         return parse_stamp(v)
 
 
+class HoverProgress(APIModel):
+    victim_id: str
+    elapsed: float
+    total: float = 5.5
+    state: str
+
+
 class EventIn(APIModel):
     event_id: str = Field(default_factory=lambda: str(uuid4()))
-    event_type: Literal["detection", "hazard", "alert", "status", "risk_score"]
+    event_type: Literal["detection", "hazard", "alert", "status", "risk_score", "hover_progress"]
     payload: dict[str, Any]
     created_at: datetime = Field(default_factory=utc_now)
 
@@ -149,6 +158,7 @@ class WSCommandPayload(APIModel):
         "link_cut",
         "link_restore",
         "set_mode",
+        "set_flight_mode",
         "sync",
     ]
     params: Dict[str, Any] = Field(default_factory=dict)

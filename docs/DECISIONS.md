@@ -45,3 +45,22 @@ This document records architectural decisions, defaults, and conflict resolution
 - **Rendering:** All icons use HTML Canvas rendering or CSS shapes. No `<svg>` tags or SVG vector draws.
 - **Leaflet:** Map initialized with `{ preferCanvas: true }` and procedural dark grid canvas tile layer.
 - **WebGL:** Three.js is pinned in `package.json` and bundled locally by Vite; all textures and particle shaders are procedurally generated with zero remote asset downloads.
+
+## 7. Fullscreen Canvas & Resize Bug Resolution
+- **Confirmed Root Cause:** The canvas container lacked a ResizeObserver and relied solely on window resize and initial mount dimensions, while the WebGL canvas lacked display:block and 100% CSS styling and renderer.setSize was called without updateStyle=false, causing high-DPR rendering to remain clipped to the top-left quarter when container layout changed.
+- **Implementation Strategy:**
+  - Standardized on a dedicated `ResizeObserver` observing the canvas container directly.
+  - A single `resize()` pipeline reads clientWidth/clientHeight in a `requestAnimationFrame`, sets camera aspect, updates projection matrix, updates pixel ratio (`Math.min(devicePixelRatio, 2)`), and invokes `renderer.setSize(w, h, false)`.
+  - Resizes composer passes (`postProcessing.setSize(w, h)`) while strictly preserving the 320x240 camera sensor render targets.
+  - Fullscreen API wraps the composite container containing the canvas, tactical HUD, and flight controls, with a clean CSS fallback (`fixed inset-0 z-50`) without stacking mechanisms.
+
+## 8. Autonomous Lawnmower Search & Hover-Verify Lifecycle
+- **Arena & Grid:** 30m x 30m arena, cruise altitude `H = 5.0m`, cruise speed `2.5m/s`, 11 lanes spanning -14m to +14m at 2.8m spacing.
+- **Sub-State Machine:** Runs inside `IN_FLIGHT`:
+  `PATROLLING -> VICTIM_LOCKED -> HOVER_STABILISING -> HOVER_CONFIRMING -> (CONFIRMED | REJECTED) -> RESUME_PATROL`.
+- **Hover Verification:**
+  - 5.5s fixed simulation-time verification duration (freezes when simulation is paused).
+  - Target hover point is directly above candidate at `Y = 4.0m`, maintaining >=2.0m clearance from active fire hazards.
+  - Thermal false-color render-target and biological signature analysis: >=80% samples in 30-40 C range confirms genuine survivor, while cold mannequin test objects (<30 C) or fire hotspots (>50 C) are rejected.
+  - Manual flight override immediately aborts hover in 1 frame, releasing WASD flight controls; returning to AUTONOMOUS seamlessly resumes search from the saved waypoint index.
+

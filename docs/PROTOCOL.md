@@ -58,6 +58,7 @@ Payload Fields:
 | `bbox_w` | float | Normalized bounding box width (0.0 - 1.0). |
 | `bbox_h` | float | Normalized bounding box height (0.0 - 1.0). |
 | `thermal_confirmed` | boolean | True if confirmed via thermal camera signature. |
+| `status` | string | Verification status: "UNCONFIRMED", "VERIFYING", "CONFIRMED", "REJECTED". |
 | `latitude` | float | Calculated survivor latitude. |
 | `longitude` | float | Calculated survivor longitude. |
 | `altitude` | float | Terrain elevation at detection point. |
@@ -110,6 +111,7 @@ Payload Fields:
 |---|---|---|
 | `mission_id` | string | Active mission identifier string. |
 | `state` | string | "DISARMED", "ARMED", "IN_FLIGHT", "RTL_RETURNING", "EMERGENCY_LAND", "COMPLETE". |
+| `substate` | string | Autonomous sub-state: "PATROLLING", "VICTIM_LOCKED", "HOVER_STABILISING", "HOVER_CONFIRMING", "CONFIRMED", "REJECTED", "RESUME_PATROL", "MANUAL". |
 | `battery_percent` | float | Remaining drone battery percentage. |
 | `coverage_percent` | float | Estimated percentage of search arena covered (0.0 - 100.0). |
 | `link_connected` | boolean | True if operator link is active. |
@@ -158,6 +160,17 @@ Payload Fields:
 | `total_frames` | integer | Total frames recorded in mission session. |
 | `envelope` | object | The original recorded versioned envelope. |
 
+### 2.11 hover_progress
+Emitted during autonomous victim hover-verify lifecycle.
+
+Payload Fields:
+| Field | Type | Description |
+|---|---|---|
+| `victim_id` | string | Target survivor or test object identifier. |
+| `elapsed` | float | Elapsed simulation time during hover (seconds). |
+| `total` | float | Total required hover verification duration (5.5 seconds). |
+| `state` | string | Hover substate: "HOVER_STABILISING", "HOVER_CONFIRMING", "CONFIRMED", "REJECTED". |
+
 ---
 
 ## 3. Client-to-Server Messages
@@ -188,6 +201,7 @@ Allowed `action` values in `cmd`:
 | `rtl` | None | Command Return-To-Launch. |
 | `emergency_land` | None | Trigger immediate descent and motor kill upon landing. |
 | `manual_input` | `{"vx": float, "vy": float, "vz": float, "yaw_rate": float}` | Manual velocity override vector. |
+| `set_flight_mode` | `{"mode": "MANUAL" \| "AUTONOMOUS"}` | Mode switch between manual flight and autonomous search. |
 | `link_cut` | None | Emulate communication link loss (switches to offline buffering). |
 | `link_restore` | None | Emulate communication link restoration (flushes buffer). |
 | `set_mode` | `{"mode": "GPS_NAV" \| "GPS_DENIED", "low_power": bool}` | Update simulation navigation or power mode. |

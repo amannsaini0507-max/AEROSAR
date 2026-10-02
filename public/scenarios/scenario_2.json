@@ -13,7 +13,8 @@
     "gps_denied": { "active": false, "bounds": [-11, -3, -10, -2] }
   },
   "victims": [
-    { "id": "victim_3", "name": "Survivor near Fire (victim_3)", "position": [4.2, 0.22, 5.8], "pose": "prone", "clothing": "#c93b3b", "temp_c": 37.1 }
+    { "id": "victim_3", "name": "Survivor near Fire (victim_3)", "position": [4.2, 0.22, 5.8], "pose": "prone", "clothing": "#c93b3b", "temp_c": 37.1 },
+    { "id": "mannequin_01", "name": "Mannequin Test Object (Non-biological)", "position": [-2.0, 0.2, 0.0], "pose": "seated", "clothing": "#94a3b8", "temp_c": 18.5 }
   ],
   "hazards": [
     { "id": "hazard_fire", "type": "fire", "position": [5.5, 0, 6.5], "radius": 4.0, "confidence": 0.95 },
