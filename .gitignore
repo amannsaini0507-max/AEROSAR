@@ -9,6 +9,8 @@ __pycache__/
 *$py.class
 *.pt
 *.onnx
+.venv/
+.pytest_cache/
 
 # Webots
 *.wbt.bak
@@ -28,6 +30,8 @@ dist/
 # Logs and temporary database files
 *.log
 *.db
+*.db-wal
+*.db-shm
 *.db3
 database/*.db
 data/bags/*
