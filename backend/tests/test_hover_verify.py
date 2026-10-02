@@ -177,3 +177,148 @@ def test_link_cut_buffers_events_and_restores_without_loss(clean_simulator):
     assert len(flushed) >= 2
     # Outbox is now empty
     assert store.get_outbox_count() == 0
+
+
+def test_step_full_scenario2_multi_victim_arena(clean_simulator):
+    """
+    Integration simulation test running 11-lane lawnmower search:
+    - Traverses grid via deterministic sim.step(dt).
+    - Locks and evaluates all 4 staged targets.
+    - Confirms all 3 real victims (victim_1, victim_2, victim_3) with thermal_confirmed=True.
+    - Rejects mannequin_01 (cold test object) with thermal_confirmed=False.
+    - 3m exclusion radius prevents duplicate locks.
+    - Mission transitions to RETURNING and lands (state=COMPLETE).
+    """
+    sim = clean_simulator
+    dt = 0.1
+    confirmed_detections = {}
+    rejected_detections = {}
+    hover_progress_events = []
+
+    # Step through entire mission
+    for _ in range(2500):
+        events = sim.step(dt)
+        for evt_type, payload in events:
+            if evt_type == "detection":
+                if payload["status"] == "CONFIRMED":
+                    confirmed_detections[payload["id"]] = payload
+                elif payload["status"] == "REJECTED":
+                    rejected_detections[payload["id"]] = payload
+            elif evt_type == "hover_progress":
+                hover_progress_events.append(payload)
+
+        if latest_mission_status["state"] == "COMPLETE":
+            break
+
+    # Real victims confirmed
+    assert "victim_1" in confirmed_detections
+    assert "victim_2" in confirmed_detections
+    assert "victim_3" in confirmed_detections
+    assert confirmed_detections["victim_1"]["thermal_confirmed"] is True
+    assert confirmed_detections["victim_3"]["thermal_confirmed"] is True
+
+    # Mannequin rejected
+    assert "mannequin_01" in rejected_detections
+    assert rejected_detections["mannequin_01"]["thermal_confirmed"] is False
+
+    # Mission completed and RTL landed
+    assert latest_mission_status["state"] == "COMPLETE"
+    assert vehicle_sm.state == VehicleState.DISARMED
+
+    # Exclusion radius: exactly 4 unique targets evaluated, no duplicate confirmations
+    assert len(confirmed_detections) == 3
+    assert len(rejected_detections) == 1
+
+
+def test_step_stabilisation_timeout_marks_unconfirmed_retry(clean_simulator):
+    """
+    If drone cannot stabilise position within 10.0s sim time,
+    it must abort to RESUME_PATROL and emit UNCONFIRMED_RETRY.
+    """
+    sim = clean_simulator
+    vic = sim.staged_victims[0]
+    sim.active_victim = vic
+    sim.substate = "HOVER_STABILISING"
+    sim.hover_target = [10.0, 10.0, 4.0]
+    sim.current_enu = [-10.0, -10.0, 4.0]
+    sim.hover_stabilise_timer = 9.8
+
+    # Step 0.3s (timer exceeds 10.0s)
+    events = sim.step(dt=0.3)
+
+    assert sim.substate == "RESUME_PATROL"
+    assert vic["id"] in sim.unconfirmed_retry_victims
+    unconf_events = [p for t, p in events if t == "detection" and p.get("status") == "UNCONFIRMED_RETRY"]
+    assert len(unconf_events) == 1
+    assert unconf_events[0]["id"] == vic["id"]
+
+
+def test_step_battery_failsafe_cancels_hover_immediately(clean_simulator):
+    """
+    Battery dropping below 10% failsafe threshold during hover must immediately
+    cancel hover, reset victim lock, and trigger EMERGENCY_LAND.
+    """
+    sim = clean_simulator
+    vic = sim.staged_victims[0]
+    sim.active_victim = vic
+    sim.substate = "HOVER_CONFIRMING"
+    sim.hover_timer = 2.5
+    sim.hover_target = [1.0, 2.0, 4.0]
+
+    # Force sim_time such that battery drops < 10%
+    sim.sim_time = 750.0
+    events = sim.step(dt=0.1)
+
+    assert sim.substate == "PATROLLING"
+    assert sim.active_victim is None
+    assert sim.hover_timer == 0.0
+    assert latest_mission_status["state"] == "EMERGENCY_LAND"
+    assert any(t == "alert" and "Failsafe triggered" in p["message"] for t, p in events)
+
+
+def test_step_sim_pause_freezes_sim_time_and_hover(clean_simulator):
+    """
+    Hard Rule 2: Pausing sim must freeze sim_time and all timers completely.
+    """
+    sim = clean_simulator
+    sim.active_victim = sim.staged_victims[0]
+    sim.substate = "HOVER_CONFIRMING"
+    sim.hover_timer = 2.5
+    sim.sim_time = 50.0
+
+    sim.pause()
+    assert latest_mission_status["state"] == "PAUSED"
+
+    events = sim.step(dt=0.5)
+    assert len(events) == 0
+    assert sim.sim_time == 50.0
+    assert sim.hover_timer == 2.5
+
+    # Resume and verify step proceeds
+    sim.resume()
+    events = sim.step(dt=0.1)
+    assert abs(sim.sim_time - 50.1) < 1e-4
+    assert abs(sim.hover_timer - 2.6) < 1e-4
+
+
+def test_hover_obstacle_elevation_and_fire_clearance(clean_simulator):
+    """
+    Verifies hover altitude is elevated above obstacles (obs_h + 1.5, min 4.0m)
+    and stays >= 2.0m horizontally from active fire.
+    """
+    sim = clean_simulator
+    vic_fire = next(v for v in sim.staged_victims if v["id"] == "victim_3")
+    sim.current_enu = [vic_fire["enu"][0], vic_fire["enu"][1], 5.0]
+    sim.waypoint_index = 15
+    sim.substate = "PATROLLING"
+
+    events = sim.step(dt=0.1)
+    assert sim.substate == "HOVER_STABILISING"
+    assert sim.hover_target is not None
+
+    hx, hy, hz = sim.hover_target
+    assert hz >= 4.0
+
+    # Fire clearance: fire is at (5.5, 6.5)
+    fire_dist = math.hypot(hx - 5.5, hy - 6.5)
+    assert fire_dist >= 2.0

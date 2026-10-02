@@ -122,6 +122,20 @@ class ObstaclePotentialField:
     def clear(self):
         self.obstacles.clear()
 
+    def get_obstacle_height(self, x: float, y: float) -> float:
+        """
+        Returns the maximum obstacle elevation (m) within proximity of (x, y).
+        Used by autonomous hover planner to elevate above physical structures.
+        """
+        max_h = 0.0
+        for ox, oy, oz, r in self.obstacles:
+            dist = math.hypot(x - ox, y - oy)
+            if dist <= r + 0.6:
+                obs_top = max(oz + r, 2.5)
+                if obs_top > max_h:
+                    max_h = obs_top
+        return max_h
+
     def compute_repulsive_force(
         self,
         drone_pos: Tuple[float, float, float],
@@ -164,3 +178,22 @@ class ObstaclePotentialField:
             fz *= scale
 
         return fx, fy, fz
+
+
+def smooth_corner_transition(
+    p_prev: Tuple[float, float, float],
+    p_corner: Tuple[float, float, float],
+    p_next: Tuple[float, float, float],
+    num_samples: int = 4,
+) -> List[Tuple[float, float, float]]:
+    """
+    Evaluates a uniform cubic B-spline fillet to round a corner transition between lanes.
+    """
+    control_pts = [p_prev, p_corner, p_corner, p_next]
+    spline = UniformCubicBSpline(control_pts)
+    samples = []
+    for step in range(1, num_samples + 1):
+        u = step / (num_samples + 1)
+        pt = spline.evaluate(u)
+        samples.append(pt)
+    return samples

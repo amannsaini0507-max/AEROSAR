@@ -43,7 +43,7 @@ class Detection(APIModel):
     bbox_w: float = 0
     bbox_h: float = 0
     thermal_confirmed: bool = False
-    status: Literal["UNCONFIRMED", "VERIFYING", "CONFIRMED", "REJECTED"] = "UNCONFIRMED"
+    status: Literal["UNCONFIRMED", "VERIFYING", "CONFIRMED", "REJECTED", "UNCONFIRMED_RETRY"] = "UNCONFIRMED"
     latitude: float
     longitude: float
     altitude: float = 0
@@ -159,6 +159,8 @@ class WSCommandPayload(APIModel):
         "link_restore",
         "set_mode",
         "set_flight_mode",
+        "set_verify_mode",
+        "fast_forward",
         "sync",
     ]
     params: Dict[str, Any] = Field(default_factory=dict)
