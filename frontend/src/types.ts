@@ -28,7 +28,7 @@ export interface DetectionMsg {
   bbox_w?: number;
   bbox_h?: number;
   thermal_confirmed: boolean;
-  status?: 'UNCONFIRMED' | 'VERIFYING' | 'CONFIRMED' | 'REJECTED';
+  status?: 'UNCONFIRMED' | 'VERIFYING' | 'CONFIRMED' | 'REJECTED' | 'UNCONFIRMED_RETRY';
   latitude: number;
   longitude: number;
   altitude?: number;
@@ -91,6 +91,7 @@ export interface DronePoseMsg {
   heading_deg?: number;
   speed_mps?: number;
   gps_fix?: boolean;
+  flight_mode?: string;
   stamp: RosStamp;
 }
 
@@ -152,7 +153,7 @@ export interface Survivor {
   id: string;
   confidence: number;
   thermalConfirmed: boolean;
-  status?: 'UNCONFIRMED' | 'VERIFYING' | 'CONFIRMED' | 'REJECTED';
+  status?: 'UNCONFIRMED' | 'VERIFYING' | 'CONFIRMED' | 'REJECTED' | 'UNCONFIRMED_RETRY';
   lat: number;
   lng: number;
   altitude?: number;
@@ -212,6 +213,7 @@ export interface DronePose {
   speed?: number;
   gpsFix?: boolean;
   time: number;
+  flightMode?: string;
 }
 
 export type SocketState = 'connecting' | 'open' | 'closed';

@@ -188,7 +188,8 @@ function applyOne(model: MissionModel, msg: ServerMessage, now: number): Mission
           heading: p.heading_deg,
           speed: p.speed_mps,
           gpsFix: p.gps_fix,
-          time: stampToMs(p.stamp, now)
+          time: stampToMs(p.stamp, now),
+          flightMode: p.flight_mode
         },
         track: [...model.track, point].slice(-MAX_TRACK_POINTS)
       };

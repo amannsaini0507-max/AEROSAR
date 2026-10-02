@@ -209,8 +209,10 @@ export default function MapPanel({ model, theme, selectedId, onSelect }: Props) 
     if (!map) return;
     const seen = new Set<string>();
 
-    Object.values(model.survivors).forEach((s) => {
-      seen.add(s.id);
+    Object.values(model.survivors)
+      .filter((s) => s.status !== 'REJECTED')
+      .forEach((s) => {
+        seen.add(s.id);
       const risk = model.risks[s.id];
       const color = risk ? LEVEL_HEX[risk.level] : LEVEL_HEX.UNSCORED;
       const icon = survivorIcon(color, s.id === selectedId, String(s.seq));

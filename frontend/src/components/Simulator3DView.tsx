@@ -58,7 +58,7 @@ export default function Simulator3DView({
       y: number;
       w: number;
       h: number;
-      status: 'UNCONFIRMED' | 'VERIFYING' | 'CONFIRMED' | 'REJECTED';
+      status: 'UNCONFIRMED' | 'VERIFYING' | 'CONFIRMED' | 'REJECTED' | 'UNCONFIRMED_RETRY';
       confidence: number;
       tempC?: number;
     }>
@@ -549,6 +549,9 @@ export default function Simulator3DView({
           for (const human of sim.scenarioManager.humans) {
             const hPos = human.group.position.clone();
             hPos.y += 0.5;
+            const toTarget = hPos.clone().sub(activeCam.position);
+            const camDir = activeCam.getWorldDirection(new THREE.Vector3());
+            if (toTarget.dot(camDir) <= 0.1) continue;
             const proj = hPos.clone().project(activeCam);
             if (proj.z > -1.0 && proj.z < 1.0) {
               const sx = (proj.x * 0.5 + 0.5) * curW;
@@ -559,7 +562,7 @@ export default function Simulator3DView({
                 const boxW = Math.max(28, Math.min(160, boxH * 0.65));
 
                 const survivor = model.survivors[human.id];
-                let status: 'UNCONFIRMED' | 'VERIFYING' | 'CONFIRMED' | 'REJECTED' = 'UNCONFIRMED';
+                let status: 'UNCONFIRMED' | 'VERIFYING' | 'CONFIRMED' | 'REJECTED' | 'UNCONFIRMED_RETRY' = 'UNCONFIRMED';
                 if (model.hoverProgress?.victim_id === human.id) {
                   status = 'VERIFYING';
                 } else if (survivor?.status) {
@@ -680,6 +683,13 @@ export default function Simulator3DView({
     setManualActive(isMan);
     onSendCommand?.('set_flight_mode', { mode });
   };
+
+  // Synchronize manualActive with telemetry flight_mode (e.g. from FlightControlsPanel)
+  useEffect(() => {
+    if (model.pose?.flightMode) {
+      setManualActive(model.pose.flightMode === 'MANUAL');
+    }
+  }, [model.pose?.flightMode]);
 
   // Keyboard navigation listener for manual flight override
   useEffect(() => {
@@ -819,8 +829,10 @@ export default function Simulator3DView({
     <section
       ref={panelRef}
       className={`panel dashboard__sim3d ${
-        isFullscreen || isFallbackFullscreen ? 'is-fullscreen' : ''
-      } ${isExpanded ? 'is-expanded' : ''}`}
+        isFullscreen ? 'is-fullscreen' : ''
+      } ${isFallbackFullscreen ? 'fixed inset-0 z-50 is-fullscreen' : ''} ${
+        isExpanded ? 'is-expanded' : ''
+      }`}
       style={panelStyle}
       aria-label="Near-Photorealistic 3D Disaster Arena"
     >
@@ -924,7 +936,7 @@ export default function Simulator3DView({
         <div
           ref={containerRef}
           data-testid="sim3d-container"
-          className="sim3d-canvas-container"
+          className="sim3d-canvas-container min-h-[75vh]"
           style={{
             width: '100%',
             height: isFullscreen || isFallbackFullscreen ? 'calc(100vh - 110px)' : '75vh',
@@ -1108,6 +1120,41 @@ export default function Simulator3DView({
               </span>
             </div>
 
+            {/* Top Tactical Banner Headline */}
+            <div
+              data-testid="hud-banner-headline"
+              style={{
+                fontSize: '11px',
+                fontFamily: 'monospace',
+                fontWeight: 700,
+                textAlign: 'center',
+                color:
+                  substate === 'CONFIRMED'
+                    ? '#4ade80'
+                    : substate === 'REJECTED'
+                    ? '#f87171'
+                    : '#38bdf8',
+              }}
+            >
+              {substate === 'CONFIRMED' ? (
+                <span style={{ color: '#4ade80' }}>[CONFIRMED]</span>
+              ) : substate === 'REJECTED' ? (
+                <span style={{ color: '#f87171' }}>[REJECTED: NO THERMAL MATCH]</span>
+              ) : substate === 'HOVER_CONFIRMING' || hoverProgress?.state === 'HOVER_CONFIRMING' ? (
+                <span>
+                  TARGET ACQUIRED: VERIFYING THERMAL SIGNATURE [{' '}
+                  {(hoverProgress?.elapsed ?? 0).toFixed(1)}s / 5.5s ]
+                </span>
+              ) : substate === 'HOVER_STABILISING' || hoverProgress?.state === 'HOVER_STABILISING' ? (
+                <span>
+                  TARGET ACQUIRED: STABILISING HOVER [{' '}
+                  {(hoverProgress?.elapsed ?? 0).toFixed(1)}s / 10.0s ]
+                </span>
+              ) : (
+                <span>PATROL ACTIVE</span>
+              )}
+            </div>
+
             {/* Verification Progress Bar */}
             {(substate === 'HOVER_CONFIRMING' ||
               substate === 'HOVER_STABILISING' ||
@@ -1123,7 +1170,7 @@ export default function Simulator3DView({
                     marginBottom: '3px',
                   }}
                 >
-                  <span>TARGET LOCK [{hoverProgress?.victim_id || 'VICTIM'}]</span>
+                  <span>TARGET ACQUIRED: VERIFYING THERMAL SIGNATURE</span>
                   <span data-testid="hud-hover-timer">
                     [ {(hoverProgress?.elapsed ?? 0).toFixed(1)}s / 5.5s ]
                   </span>
@@ -1145,7 +1192,12 @@ export default function Simulator3DView({
                         100,
                         Math.max(0, ((hoverProgress?.elapsed ?? 0) / 5.5) * 100)
                       )}%`,
-                      background: 'linear-gradient(90deg, #0284c7, #38bdf8)',
+                      background:
+                        substate === 'CONFIRMED'
+                          ? '#22c55e'
+                          : substate === 'REJECTED'
+                          ? '#ef4444'
+                          : 'linear-gradient(90deg, #0284c7, #38bdf8)',
                       boxShadow: '0 0 8px #38bdf8',
                       transition: 'width 0.1s linear',
                     }}

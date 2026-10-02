@@ -53,7 +53,9 @@ export interface PriorityRow {
  * backend hasn't scored yet sit at the bottom as "unscored".
  */
 export function derivePriority(model: MissionModel): PriorityRow[] {
-  const rows: PriorityRow[] = Object.values(model.survivors).map((s) => ({ survivor: s, risk: model.risks[s.id] ?? null }));
+  const rows: PriorityRow[] = Object.values(model.survivors)
+    .filter((s) => s.status !== 'REJECTED')
+    .map((s) => ({ survivor: s, risk: model.risks[s.id] ?? null }));
   const rankIndex = new Map<string, number>();
   model.ranking?.forEach((id, i) => rankIndex.set(id, i));
   return rows.sort((a, b) => {
