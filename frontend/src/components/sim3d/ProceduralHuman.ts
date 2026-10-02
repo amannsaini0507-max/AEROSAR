@@ -15,10 +15,14 @@ export class ProceduralHuman {
   public headMesh: THREE.Mesh;
   public limbMeshes: THREE.Mesh[] = [];
   public breathPhase: number = Math.random() * Math.PI * 2;
+  public id: string;
+  public name: string;
   public basePose: 'prone' | 'seated' | 'trapped';
   public tempC: number;
 
   constructor(config: HumanConfig) {
+    this.id = config.id;
+    this.name = config.name;
     this.group = new THREE.Group();
     this.group.name = `human_${config.id}`;
     this.basePose = config.pose;

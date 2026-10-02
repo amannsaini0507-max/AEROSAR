@@ -13,18 +13,55 @@ interface Props {
 export default function FlightControlsPanel({ model, onSendCommand }: Props) {
   const [manual, setManual] = useState(false);
   const state = model.mission?.state ?? 'IDLE';
+  const substate = model.mission?.substate ?? 'PATROLLING';
 
   const send = (action: string, params?: Record<string, unknown>) => {
     onSendCommand?.(action, params);
+  };
+
+  const handleModeChange = (mode: 'MANUAL' | 'AUTONOMOUS') => {
+    const isMan = mode === 'MANUAL';
+    setManual(isMan);
+    send('set_flight_mode', { mode });
   };
 
   return (
     <section className="panel dashboard__flight-controls" aria-label="Flight Controls">
       <div className="panel__head">
         <span className="panel__title">Flight Controls & Modes</span>
-        <span className="panel__count mono">State: {state}</span>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <span className="panel__count mono" style={{ color: '#38bdf8' }}>
+            Substate: {substate}
+          </span>
+          <span className="panel__count mono">State: {state}</span>
+        </div>
       </div>
       <div className="panel__body panel__body--padded">
+        {/* Mode Switch: MANUAL | AUTONOMOUS */}
+        <div style={{ marginBottom: '14px', padding: '8px', background: 'var(--surface-alt)', borderRadius: '6px', border: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: '12px', fontWeight: 600 }}>Flight Mode:</span>
+            <div className="segmented" role="tablist">
+              <button
+                type="button"
+                className={'segmented__btn' + (!manual ? ' is-active' : '')}
+                onClick={() => handleModeChange('AUTONOMOUS')}
+                title="Autonomous serpentine search with victim hover-verification"
+              >
+                AUTONOMOUS
+              </button>
+              <button
+                type="button"
+                className={'segmented__btn' + (manual ? ' is-active' : '')}
+                onClick={() => handleModeChange('MANUAL')}
+                title="Immediate manual joystick / WASD override"
+              >
+                MANUAL
+              </button>
+            </div>
+          </div>
+        </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '10px' }}>
           <button
             type="button"
@@ -74,7 +111,7 @@ export default function FlightControlsPanel({ model, onSendCommand }: Props) {
               <input
                 type="checkbox"
                 checked={manual}
-                onChange={(e) => setManual(e.target.checked)}
+                onChange={(e) => handleModeChange(e.target.checked ? 'MANUAL' : 'AUTONOMOUS')}
               />
               Enable Keyboard (WASD)
             </label>

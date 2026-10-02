@@ -177,7 +177,16 @@ export default function MapPanel({ model, theme, selectedId, onSelect }: Props) 
     map.on('dragstart', stopFollowing);
     map.getContainer().addEventListener('wheel', stopFollowing, { passive: true });
 
+    // Observe container resizing to keep Leaflet canvas layout crisp
+    const ro = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    if (mapDivRef.current) {
+      ro.observe(mapDivRef.current);
+    }
+
     return () => {
+      ro.disconnect();
       map.remove();
       mapRef.current = null;
       survivorMarkers.current.clear();
