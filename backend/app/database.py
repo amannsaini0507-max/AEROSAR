@@ -106,6 +106,24 @@ class EventStore:
             conn.commit()
             return cursor.rowcount == 1
 
+    def append_event(
+        self,
+        mission_id: str,
+        event_type: str,
+        payload: Dict[str, Any],
+        created_at: Optional[float] = None,
+    ) -> bool:
+        """Helper to append an event into the events table and mission store."""
+        t = created_at if created_at is not None else datetime.now(timezone.utc).timestamp()
+        event_id = payload.get("id") or payload.get("event_id") or f"{event_type}-{int(t * 1000)}"
+        event_in = EventIn(
+            event_id=str(event_id),
+            event_type=event_type,
+            payload=payload,
+            created_at=datetime.fromtimestamp(t, tz=timezone.utc),
+        )
+        return self.insert(event_in, synced=True)
+
     def list(self, event_type: Optional[str] = None) -> List[Dict[str, Any]]:
         query = "SELECT * FROM events"
         params: tuple = ()
