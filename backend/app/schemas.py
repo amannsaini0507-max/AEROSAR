@@ -102,7 +102,7 @@ class HoverProgress(APIModel):
 
 class EventIn(APIModel):
     event_id: str = Field(default_factory=lambda: str(uuid4()))
-    event_type: Literal["detection", "hazard", "alert", "status", "risk_score", "hover_progress"]
+    event_type: str = "detection"
     payload: dict[str, Any]
     created_at: datetime = Field(default_factory=utc_now)
 
