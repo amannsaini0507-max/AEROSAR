@@ -1,0 +1,26 @@
+{
+  "id": "lora_blackout",
+  "name": "Scenario: LoRa Blackout (No-Network Zone & Relay)",
+  "seed": 2026,
+  "description": "Active fire zone with severed normal RF network coverage requiring autonomous LoRa transmission to ground source station.",
+  "default_lighting": "smoke",
+  "arena": { "width": 30, "length": 30 },
+  "drone_spawn": { "x": 0, "y": 1.5, "z": 0, "heading": 90 },
+  "station": { "pos": [-13, -13], "antennaHeight": 6.0 },
+  "noNetworkZones": [
+    { "x0": 2.0, "z0": 3.0, "x1": 11.0, "z1": 11.0 }
+  ],
+  "zones": {
+    "zone_a_ruins": { "active": false, "position": [-7, 0, -6] },
+    "zone_b_flood": { "active": false, "position": [6, 0, -6] },
+    "zone_c_fire": { "active": true, "position": [5.5, 0, 6.5], "intensity": 1.2, "smoke_spread": 4.5 },
+    "gps_denied": { "active": false, "bounds": [-11, -3, -10, -2] }
+  },
+  "victims": [
+    { "id": "victim_3", "name": "Survivor near Fire (victim_3)", "position": [4.2, 0.22, 5.8], "pose": "prone", "clothing": "#c93b3b", "temp_c": 37.1 }
+  ],
+  "hazards": [
+    { "id": "hazard_fire", "type": "fire", "position": [5.5, 0, 6.5], "radius": 4.0, "confidence": 0.95 }
+  ],
+  "expected_detections": { "survivors": 1, "hazards": 1, "priority": "CRITICAL" }
+}

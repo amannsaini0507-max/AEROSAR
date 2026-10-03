@@ -1251,7 +1251,7 @@ async def mission_abort() -> dict:
 async def debug_link_cut() -> dict:
     hub.is_link_connected = False
     latest_mission_status["link_connected"] = False
-    link_state = store.get_sync_status(is_online=False)
+    link_state = store.get_sync_status(is_online=False, mode="OFFLINE", via="lora")
     await hub.broadcast_envelope(hub.build_envelope("link_state", link_state))
     alert = Alert(alert_type="LINK_LOST", message="OFFLINE — logging locally to SQLite buffer")
     store.insert(create_event("alert", alert, alert.alert_id), synced=False)
@@ -1272,7 +1272,8 @@ async def debug_link_restore() -> dict:
         await hub.broadcast_envelope(hub.build_envelope(item["event_type"], item["payload"]))
 
     store.mark_all_synced()
-    link_state = {"state": "CONNECTED", "queued_events": 0, "synced_events": synced_count}
+    link_state = store.get_sync_status(is_online=True, mode="NETWORK", via="network")
+    link_state["synced_events"] = synced_count
     await hub.broadcast_envelope(hub.build_envelope("link_state", link_state))
 
     alert = Alert(alert_type="LINK_RESTORED", message=f"Link restored; {synced_count} queued events synchronized")
@@ -1454,9 +1455,46 @@ async def handle_websocket(websocket: WebSocket):
                 sim_engine.set_verify_mode(mode, threshold)
             elif cmd_action == "sync":
                 synced = store.mark_all_synced()
-                await websocket.send_json(hub.build_envelope("link_state", {"state": "CONNECTED", "queued_events": 0, "synced_events": synced}))
+                link_state = store.get_sync_status(is_online=True, mode="NETWORK", via="network")
+                link_state["synced_events"] = synced
+                await websocket.send_json(hub.build_envelope("link_state", link_state))
             elif cmd_action == "fast_forward":
                 sim_engine.waypoint_index = int(cmd_params.get("waypoint_index", 2))
+            elif cmd_action == "set_link_mode":
+                mode_val = str(cmd_params.get("mode", "auto")).lower()
+                is_online = (mode_val != "force_offline")
+                target_mode = "LORA_ONLY" if mode_val == "force_lora" else ("OFFLINE" if mode_val == "force_offline" else "NETWORK")
+                via_val = "lora" if target_mode == "LORA_ONLY" else "network"
+                await hub.broadcast_envelope(hub.build_envelope("link_state", {
+                    "state": "CONNECTED" if is_online else "OFFLINE",
+                    "queued_events": store.get_outbox_count(),
+                    "synced_events": 0,
+                    "mode": target_mode,
+                    "via": via_val,
+                    "rssi": -85.0 if target_mode == "NETWORK" else -98.0,
+                    "snr": 12.0 if target_mode == "NETWORK" else 8.0,
+                    "sf": 7,
+                }))
+            elif cmd_action in ("lidar_summary", "station_status", "lora_packet"):
+                mission_id = latest_mission_status.get("mission_id", "MISSION-AEROSAR-01")
+                store.append_event(
+                    mission_id=mission_id,
+                    event_type=cmd_action,
+                    payload=cmd_params,
+                    created_at=time.time(),
+                )
+                await hub.broadcast_envelope(hub.build_envelope(cmd_action, cmd_params))
+            elif cmd_action == "lora_relay":
+                relay_type = str(cmd_params.get("type", "detection"))
+                relay_data = cmd_params.get("data", cmd_params)
+                mission_id = latest_mission_status.get("mission_id", "MISSION-AEROSAR-01")
+                store.append_event(
+                    mission_id=mission_id,
+                    event_type=relay_type,
+                    payload=relay_data,
+                    created_at=time.time(),
+                )
+                await hub.broadcast_envelope(hub.build_envelope(relay_type, relay_data))
 
     except WebSocketDisconnect:
         if websocket in hub.clients:

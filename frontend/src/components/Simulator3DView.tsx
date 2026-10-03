@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
-import type { MissionModel } from '../types';
+import type { MissionModel, ServerMessage } from '../types';
 import { geodeticToEnu } from '../lib/geo';
-import type { CameraViewMode, LightingVariant, QualityPreset, SensorChannel } from './sim3d/types';
+import type { CameraViewMode, LightingVariant, QualityPreset, SensorChannel, ScenarioDefinition } from './sim3d/types';
 import { EnvironmentSystem } from './sim3d/EnvironmentSystem';
 import { TerrainSystem } from './sim3d/TerrainSystem';
 import { FireSmokeSystem } from './sim3d/FireSmokeSystem';
@@ -13,16 +13,22 @@ import { ThermalPipeline } from './sim3d/ThermalPipeline';
 import { PostProcessingPipeline } from './sim3d/PostProcessingPipeline';
 import { ScenarioManager } from './sim3d/ScenarioManager';
 import { PhotoModeManager } from './sim3d/PhotoMode';
+import { LidarSystem } from './sim3d/lidar/LidarSystem';
+import { GroundStation } from './sim3d/GroundStation';
+import { LoraLinkManager } from '../lib/lora/LoraLinkManager';
+import LidarSectorPlot from './sim3d/lidar/LidarSectorPlot';
 
 interface Simulator3DProps {
   model: MissionModel;
   onSendCommand?: (action: string, params?: Record<string, unknown>) => void;
+  onIngestMessage?: (msg: ServerMessage) => void;
   lowPower?: boolean;
 }
 
 export default function Simulator3DView({
   model,
   onSendCommand,
+  onIngestMessage,
   lowPower = false,
 }: Simulator3DProps) {
   const panelRef = useRef<HTMLElement>(null);
@@ -48,6 +54,7 @@ export default function Simulator3DView({
   const [yoloMode, setYoloMode] = useState(false);
   const [liveFps, setLiveFps] = useState<number>(60.0);
   const [liveMs, setLiveMs] = useState<number>(16.6);
+  const [lidarSectorRanges, setLidarSectorRanges] = useState<[number, number, number, number, number, number, number, number]>([40, 40, 40, 40, 40, 40, 40, 40]);
 
   // Projected 3D target coordinates for Tactical HUD DOM Overlay (Zero SVG)
   const [projectedTargets, setProjectedTargets] = useState<
@@ -83,6 +90,9 @@ export default function Simulator3DView({
     postProcessing: PostProcessingPipeline;
     scenarioManager: ScenarioManager;
     photoMode: PhotoModeManager;
+    lidarSystem: LidarSystem;
+    groundStation: GroundStation;
+    loraManager: LoraLinkManager;
     dronePos: THREE.Vector3;
     droneVel: THREE.Vector3;
     droneRot: THREE.Euler;
@@ -371,6 +381,35 @@ export default function Simulator3DView({
     );
     const photoMode = new PhotoModeManager(renderer, scene, mainCamera, renderer.domElement);
 
+    const groundStation = new GroundStation();
+    scene.add(groundStation.group);
+
+    const lidarSystem = new LidarSystem();
+    scene.add(lidarSystem.pointsMesh);
+
+    const loraManager = new LoraLinkManager();
+
+    lidarSystem.onSummaryUpdate = (summary) => {
+      setLidarSectorRanges(summary.sector_ranges);
+      onIngestMessage?.({ type: 'lidar_summary', data: summary });
+      onSendCommand?.('lidar_summary', summary as unknown as Record<string, unknown>);
+    };
+
+    loraManager.onStationStatus = (status) => {
+      onIngestMessage?.({ type: 'station_status', data: status });
+      onSendCommand?.('station_status', status as unknown as Record<string, unknown>);
+    };
+
+    loraManager.onPacketLog = (log) => {
+      onIngestMessage?.({ type: 'lora_packet', data: log });
+      onSendCommand?.('lora_packet', log as unknown as Record<string, unknown>);
+    };
+
+    loraManager.onRelayMessage = (msg) => {
+      onIngestMessage?.(msg as ServerMessage);
+      onSendCommand?.('lora_relay', msg.data);
+    };
+
     simRef.current = {
       renderer,
       scene,
@@ -386,6 +425,9 @@ export default function Simulator3DView({
       postProcessing,
       scenarioManager,
       photoMode,
+      lidarSystem,
+      groundStation,
+      loraManager,
       dronePos: new THREE.Vector3(0, 1.5, 0),
       droneVel: new THREE.Vector3(0, 0, 0),
       droneRot: new THREE.Euler(0, 0, 0),
@@ -393,8 +435,28 @@ export default function Simulator3DView({
       running: true,
     };
 
-    // Load initial scenario (Scenario 2: Fire + Smoke + Critical Survivor)
-    scenarioManager.loadScenario(scenarioId, lighting);
+    const applyScenarioStationAndZones = (def: ScenarioDefinition) => {
+      if (def?.station) {
+        groundStation.setPosition(def.station.pos[0], def.station.pos[1], def.station.antennaHeight ?? 6.0);
+        loraManager.station = { pos: def.station.pos, antennaHeight: def.station.antennaHeight ?? 6.0 };
+      }
+      if (def?.noNetworkZones) {
+        loraManager.setNoNetworkZones(def.noNetworkZones);
+      } else {
+        loraManager.setNoNetworkZones([{ x0: 2.0, z0: 3.0, x1: 11.0, z1: 11.0 }]);
+      }
+      setTimeout(() => {
+        lidarSystem.buildSceneBVH([
+          terrainSystem.mesh,
+          ruinsSystem.group,
+          waterSystem.mesh,
+        ]);
+        loraManager.setBVH(lidarSystem.bvhData?.bvh ?? null, lidarSystem.bvhData?.materialIndexMap ?? null);
+      }, 150);
+    };
+
+    // Load initial scenario
+    scenarioManager.loadScenario(scenarioId, lighting).then(applyScenarioStationAndZones);
 
     // 5. Dedicated ResizeObserver on container
     const ro = new ResizeObserver(() => {
@@ -467,6 +529,47 @@ export default function Simulator3DView({
       sim.waterSystem.update(simTimeSec);
       sim.ruinsSystem.update(delta, simTimeSec);
       sim.scenarioManager.update(simTimeSec);
+
+      // Update Ground Station & LoRa Link
+      sim.groundStation.update(simTimeSec, sim.loraManager.mode === 'LORA_ONLY');
+      sim.loraManager.update(delta, simTimeSec, sim.dronePos, {
+        state: model.mission?.state === 'SEARCHING' ? 1 : 0,
+        batteryPercent: 98.5,
+        lat: model.pose?.lat ?? 26.9124,
+        lon: model.pose?.lng ?? 75.7873,
+        altM: sim.dronePos.y,
+      });
+
+      // Update LiDAR Subsystem
+      const victimCapsules = sim.scenarioManager.humans.map((h) => ({
+        id: h.id,
+        x: h.group.position.x,
+        y: h.group.position.y,
+        z: h.group.position.z,
+        radius: 0.35,
+        height: 1.0,
+      }));
+      const isLidarActive = channelRef.current === 'lidar';
+      const isAvoidanceActive = model.mission?.state === 'SEARCHING' || manualActive;
+      sim.lidarSystem.pointsMesh.visible = isLidarActive;
+      sim.lidarSystem.update(
+        delta,
+        sim.dronePos,
+        sim.drone.group.quaternion,
+        preset === 'low',
+        isLidarActive,
+        isAvoidanceActive,
+        victimCapsules
+      );
+
+      // Reactive Obstacle Avoidance: replace analytic distance when LiDAR sector range is active
+      const fwdDist = sim.lidarSystem.currentSectorRanges[0];
+      if (fwdDist < 2.0 && sim.targetVel.z < 0) {
+        sim.targetVel.z = 0;
+        const leftDist = sim.lidarSystem.currentSectorRanges[6];
+        const rightDist = sim.lidarSystem.currentSectorRanges[2];
+        sim.targetVel.x += (leftDist > rightDist ? -1.0 : 1.0) * 1.5;
+      }
 
       // Camera Positioning Mode
       let activeCam: THREE.PerspectiveCamera = sim.mainCamera;
@@ -621,6 +724,8 @@ export default function Simulator3DView({
       window.removeEventListener('resize', handleWindowResize);
       if (simRef.current) {
         simRef.current.running = false;
+        simRef.current.groundStation.dispose();
+        simRef.current.lidarSystem.dispose();
         simRef.current.envSystem.dispose();
         simRef.current.thermalPipeline.dispose();
         simRef.current.postProcessing.dispose();
@@ -656,6 +761,28 @@ export default function Simulator3DView({
       simRef.current?.scenarioManager.loadScenario(id, lighting).then((def) => {
         if (def.default_lighting && lighting === 'day') {
           setLighting(def.default_lighting);
+        }
+        if (simRef.current) {
+          if (def?.station) {
+            simRef.current.groundStation.setPosition(def.station.pos[0], def.station.pos[1], def.station.antennaHeight ?? 6.0);
+            simRef.current.loraManager.station = { pos: def.station.pos, antennaHeight: def.station.antennaHeight ?? 6.0 };
+          }
+          if (def?.noNetworkZones) {
+            simRef.current.loraManager.setNoNetworkZones(def.noNetworkZones);
+          }
+          setTimeout(() => {
+            if (simRef.current) {
+              simRef.current.lidarSystem.buildSceneBVH([
+                simRef.current.terrainSystem.mesh,
+                simRef.current.ruinsSystem.group,
+                simRef.current.waterSystem.mesh,
+              ]);
+              simRef.current.loraManager.setBVH(
+                simRef.current.lidarSystem.bvhData?.bvh ?? null,
+                simRef.current.lidarSystem.bvhData?.materialIndexMap ?? null
+              );
+            }
+          }, 150);
         }
       });
     },
@@ -890,6 +1017,13 @@ export default function Simulator3DView({
             onClick={() => setChannel('thermal')}
           >
             Thermal
+          </button>
+          <button
+            type="button"
+            className={'segmented__btn' + (channel === 'lidar' ? ' is-active' : '')}
+            onClick={() => setChannel('lidar')}
+          >
+            LiDAR
           </button>
         </div>
 
@@ -1281,6 +1415,8 @@ export default function Simulator3DView({
                 <option value="4">4: GPS-Denied Nav</option>
                 <option value="5">5: Network Failure</option>
                 <option value="combined">Combined Demo (2 + 5)</option>
+                <option value="lora_blackout">LoRa Blackout & Station Relay</option>
+                <option value="lora_blackout_obstruction">LoRa Blackout (Ruins Obstruction)</option>
               </select>
             </div>
 
@@ -1372,6 +1508,21 @@ export default function Simulator3DView({
               {photoModeActive ? 'Exit Photo' : 'Photo Mode'}
             </button>
           </div>
+
+          {/* Tactical LiDAR Sector Plot (Canvas 2D, Zero SVG) */}
+          {channel === 'lidar' && (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: '16px',
+                right: '16px',
+                zIndex: 30,
+                pointerEvents: 'auto',
+              }}
+            >
+              <LidarSectorPlot ranges={lidarSectorRanges} />
+            </div>
+          )}
         </div>
 
         {/* Photo Mode Active HUD Overlay */}

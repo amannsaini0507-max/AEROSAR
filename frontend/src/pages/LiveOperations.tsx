@@ -49,7 +49,7 @@ export default function LiveOperations() {
       {/* 8-Panel Tactical Grid (Section 5) */}
       <div className="dashboard" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px' }}>
         {/* Panel 1: 3D WebGL Simulator */}
-        <Simulator3DView model={model} onSendCommand={controls.sendCommand} />
+        <Simulator3DView model={model} onSendCommand={controls.sendCommand} onIngestMessage={ingest} />
 
         {/* Panel 2: Leaflet Tactical Map */}
         <MapPanel model={model} theme={theme} selectedId={selectedId} onSelect={setSelectedId} />

@@ -168,16 +168,23 @@ class EventStore:
         with closing(self._connect()) as conn:
             return conn.execute("SELECT count(*) FROM outbox").fetchone()[0]
 
-    def get_sync_status(self, is_online: bool = True) -> Dict[str, Any]:
+    def get_sync_status(self, is_online: bool = True, mode: str = None, via: str = None) -> Dict[str, Any]:
         with closing(self._connect()) as conn:
             total = conn.execute("SELECT count(*) FROM events").fetchone()[0]
             unsynced = conn.execute("SELECT count(*) FROM events WHERE synced = 0").fetchone()[0]
             outbox_count = conn.execute("SELECT count(*) FROM outbox").fetchone()[0]
             synced = total - unsynced
+            current_mode = mode or ("NETWORK" if is_online else "OFFLINE")
+            current_via = via or ("network" if is_online else "lora")
             return {
                 "state": "CONNECTED" if is_online else "OFFLINE",
                 "queued_events": unsynced + outbox_count,
                 "synced_events": synced,
+                "mode": current_mode,
+                "via": current_via,
+                "rssi": -85.0 if is_online else -102.5,
+                "snr": 12.0 if is_online else 6.5,
+                "sf": 7,
             }
 
     # Replay frames & Mission logging

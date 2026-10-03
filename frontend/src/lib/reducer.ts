@@ -25,7 +25,10 @@ export function createInitialModel(source: FeedSource): MissionModel {
     hoverProgress: null,
     lastMessageAt: null,
     messageCounts: {},
-    survivorSeq: 0
+    survivorSeq: 0,
+    station: null,
+    lidar: null,
+    loraPackets: []
   };
 }
 
@@ -81,7 +84,12 @@ function applyOne(model: MissionModel, msg: ServerMessage, now: number): Mission
             altitude: d.altitude,
             time: stampToMs(d.stamp, now),
             receivedAt: existing?.receivedAt ?? now,
-            seq
+            seq,
+            via: d.via,
+            ageMs: d.age_ms,
+            rssi: d.rssi,
+            snr: d.snr,
+            sf: d.sf
           }
         }
       };
@@ -197,6 +205,15 @@ function applyOne(model: MissionModel, msg: ServerMessage, now: number): Mission
     case 'link_state':
     case 'sync_status':
       return { ...model, sync: msg.data };
+    case 'lidar_summary':
+      return { ...model, lidar: msg.data };
+    case 'station_status':
+      return { ...model, station: msg.data };
+    case 'lora_packet':
+      return {
+        ...model,
+        loraPackets: [...(model.loraPackets || []).slice(-49), msg.data]
+      };
     case 'route':
       return { ...model, route: Array.isArray(msg.data?.points) ? msg.data : null };
     case 'video_status':

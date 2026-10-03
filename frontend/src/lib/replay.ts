@@ -29,7 +29,11 @@ const EVENT_TYPE_TO_MESSAGE: Record<string, ServerMessage['type']> = {
   risk_score: 'risk_score',
   priority: 'priority',
   drone_pose: 'drone_pose',
-  route: 'route'
+  route: 'route',
+  lidar_summary: 'lidar_summary',
+  station_status: 'station_status',
+  lora_packet: 'lora_packet',
+  link_state: 'link_state',
 };
 
 function timeOf(msg: ServerMessage, fallback: number): number {

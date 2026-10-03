@@ -33,6 +33,12 @@ export interface DetectionMsg {
   longitude: number;
   altitude?: number;
   stamp: RosStamp;
+  via?: 'network' | 'lora';
+  rssi?: number;
+  snr?: number;
+  sf?: number;
+  airtime_ms?: number;
+  age_ms?: number;
 }
 
 /** aerosar_msgs/Hazard — `/perception/hazard`. */
@@ -100,6 +106,46 @@ export interface SyncStatusMsg {
   state: 'CONNECTED' | 'OFFLINE' | 'SYNCING';
   queued_events?: number;
   synced_events?: number;
+  mode?: 'NETWORK' | 'LORA_ONLY' | 'OFFLINE';
+  via?: 'network' | 'lora';
+  rssi?: number;
+  snr?: number;
+  sf?: number;
+}
+
+export interface LidarSummaryMsg {
+  sector_ranges: [number, number, number, number, number, number, number, number];
+  hit_count: number;
+  scan_time_ms: number;
+}
+
+export interface StationStatusMsg {
+  mode: 'NETWORK' | 'LORA_ONLY' | 'OFFLINE';
+  rssi: number;
+  snr: number;
+  sf: number;
+  pdr: number;
+  last_packet_age_ms: number;
+  queue_length: number;
+  duty_cycle_use: number;
+  packets_delivered: number;
+  packets_lost: number;
+  is_obstructed?: boolean;
+  obstruction_loss_db?: number;
+  scaled_distance_m?: number;
+  radio_scaled?: boolean;
+}
+
+export interface LoraPacketMsg {
+  dir: 'tx' | 'rx';
+  type: 'HEARTBEAT' | 'VICTIM' | 'HAZARD' | 'ACK';
+  size: number;
+  sf: number;
+  rssi: number;
+  snr: number;
+  airtime_ms: number;
+  result: 'delivered' | 'lost' | 'duty_exhausted' | 'ack';
+  sim_time?: number;
 }
 
 /** EXTENSION (§12): safe route as ordered [lat, lng] waypoints. */
@@ -140,6 +186,9 @@ export type ServerMessage =
   | { type: 'drone_pose'; data: DronePoseMsg }
   | { type: 'link_state'; data: SyncStatusMsg }
   | { type: 'sync_status'; data: SyncStatusMsg }
+  | { type: 'lidar_summary'; data: LidarSummaryMsg }
+  | { type: 'station_status'; data: StationStatusMsg }
+  | { type: 'lora_packet'; data: LoraPacketMsg }
   | { type: 'route'; data: RouteMsg }
   | { type: 'video_status'; data: VideoStatusMsg }
   | { type: 'video_frame'; data: VideoFrameMsg }
@@ -163,6 +212,11 @@ export interface Survivor {
   receivedAt: number;
   /** Order in which survivors were first seen; gives stable "Survivor #n" labels. */
   seq: number;
+  via?: 'network' | 'lora';
+  ageMs?: number;
+  rssi?: number;
+  snr?: number;
+  sf?: number;
 }
 
 export interface Hazard {
@@ -246,4 +300,7 @@ export interface MissionModel {
   lastMessageAt: number | null;
   messageCounts: Record<string, number>;
   survivorSeq: number;
+  station?: StationStatusMsg | null;
+  lidar?: LidarSummaryMsg | null;
+  loraPackets?: LoraPacketMsg[];
 }

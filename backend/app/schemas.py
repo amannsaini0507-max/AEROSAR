@@ -162,5 +162,10 @@ class WSCommandPayload(APIModel):
         "set_verify_mode",
         "fast_forward",
         "sync",
+        "set_link_mode",
+        "lidar_summary",
+        "station_status",
+        "lora_packet",
+        "lora_relay",
     ]
     params: Dict[str, Any] = Field(default_factory=dict)

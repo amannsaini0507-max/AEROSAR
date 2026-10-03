@@ -51,6 +51,11 @@ export default function PriorityList({ model, selectedId, onSelect, limit, large
                       {risk ? risk.reason.replace(/^[A-Z]+:\s*/, '') : 'Waiting for risk score from backend'}
                     </span>
                     {arrivedLate(survivor) && <span className="synced-tag">detected while offline</span>}
+                    {survivor.via === 'lora' && (
+                      <span className="synced-tag" style={{ background: '#d97706', color: '#fff', marginLeft: '4px' }}>
+                        via LoRa (degraded{survivor.ageMs ? `, age ${Math.round(survivor.ageMs / 1000)}s` : ''})
+                      </span>
+                    )}
                   </span>
                 </button>
               </li>
