@@ -1,7 +1,7 @@
 export type QualityPreset = 'low' | 'medium' | 'high' | 'ultra';
 export type LightingVariant = 'day' | 'dusk' | 'night' | 'smoke';
 export type CameraViewMode = 'orbit' | 'drone_fpv' | 'top_down' | 'ruins_cam' | 'fire_cam' | 'flood_cam';
-export type SensorChannel = 'rgb' | 'thermal';
+export type SensorChannel = 'rgb' | 'thermal' | 'lidar';
 
 export interface ScenarioDefinition {
   id: string;
@@ -11,6 +11,8 @@ export interface ScenarioDefinition {
   default_lighting: LightingVariant;
   arena: { width: number; length: number };
   drone_spawn: { x: number; y: number; z: number; heading: number };
+  station?: { pos: [number, number]; antennaHeight?: number };
+  noNetworkZones?: Array<{ x0: number; z0: number; x1: number; z1: number }>;
   zones: {
     zone_a_ruins: { active: boolean; position: [number, number, number]; debris_radius?: number };
     zone_b_flood: { active: boolean; position: [number, number, number]; size?: [number, number]; water_level?: number };

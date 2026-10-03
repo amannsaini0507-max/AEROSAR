@@ -58,6 +58,30 @@ export class DroneModel {
     canopy.userData = { thermalTemp: 25.0 };
     this.group.add(canopy);
 
+    // Drone-Mounted 16-Channel LiDAR Scanner Puck (Mounted underneath chassis)
+    const lidarPuckGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.05, 16);
+    const lidarPuckMat = new THREE.MeshStandardMaterial({
+      color: 0x0f172a,
+      roughness: 0.2,
+      metalness: 0.9,
+    });
+    const lidarPuck = new THREE.Mesh(lidarPuckGeo, lidarPuckMat);
+    lidarPuck.position.set(0, -0.08, 0);
+    lidarPuck.castShadow = true;
+    // Optical NIR sensor ring
+    const opticalRingGeo = new THREE.CylinderGeometry(0.062, 0.062, 0.015, 16);
+    const opticalRingMat = new THREE.MeshStandardMaterial({
+      color: 0x38bdf8,
+      roughness: 0.1,
+      metalness: 0.5,
+      emissive: 0x0369a1,
+      emissiveIntensity: 0.5,
+    });
+    const opticalRing = new THREE.Mesh(opticalRingGeo, opticalRingMat);
+    opticalRing.position.set(0, -0.08, 0);
+    this.group.add(lidarPuck);
+    this.group.add(opticalRing);
+
     // 2. Landing Gear Skids
     const skidMat = new THREE.MeshStandardMaterial({ color: 0x1f2226, roughness: 0.6, metalness: 0.5 });
     const createSkid = (sideX: number) => {

@@ -139,6 +139,11 @@ Payload Fields:
 | `state` | string | "CONNECTED", "OFFLINE", "SYNCING". |
 | `queued_events` | integer | Number of unsynchronized events in local buffer. |
 | `synced_events` | integer | Total synchronized events count. |
+| `mode` | string | Link transport mode: "NETWORK", "LORA_ONLY", "OFFLINE". |
+| `via` | string | Delivery transport: "network" or "lora". |
+| `rssi` | float | Radio link RSSI in dBm. |
+| `snr` | float | Radio link SNR in dB. |
+| `sf` | integer | Spreading factor (7 - 12). |
 
 ### 2.9 route
 A* safe access path from base staging location to target survivor pin.
@@ -170,6 +175,57 @@ Payload Fields:
 | `elapsed` | float | Elapsed simulation time during hover (seconds). |
 | `total` | float | Total required hover verification duration (5.5 seconds). |
 | `state` | string | Hover substate: "HOVER_STABILISING", "HOVER_CONFIRMING", "CONFIRMED", "REJECTED". |
+
+### 2.12 lidar_summary
+Emitted at 5 Hz by the WebGL LiDAR subsystem for reactive avoidance and tactical HUD.
+
+Payload Fields:
+| Field | Type | Description |
+|---|---|---|
+| `sector_min_ranges` | list[float] | Array of 8 minimum obstacle ranges in meters (45° sectors: N, NE, E, SE, S, SW, W, NW). |
+| `closest_obstacle_m` | float | Absolute closest obstacle distance detected in current scan (meters). |
+| `closest_sector` | integer | Index of sector with minimum obstacle distance (0 - 7, 0 = forward). |
+| `hit_count` | integer | Number of point hits returned in the latest scan cycle. |
+| `scan_time_ms` | float | Duration of BVH worker raycast in milliseconds (~3-5 ms). |
+| `stamp` | object/string | Timestamp of scan. |
+
+### 2.13 station_status
+Broadcast by Ground Station & LoRa link manager (~1-2 Hz) reporting RF link health.
+
+Payload Fields:
+| Field | Type | Description |
+|---|---|---|
+| `mode` | string | Current link mode: "NETWORK", "LORA_ONLY", "OFFLINE". |
+| `rssi` | float | Received signal strength indicator in dBm. |
+| `snr` | float | Signal-to-noise ratio in dB. |
+| `sf` | integer | Active LoRa spreading factor (7 - 12). |
+| `pdr` | float | Packet Delivery Ratio over last window (0.0 - 1.0). |
+| `last_packet_age_ms` | float | Elapsed milliseconds since last acknowledged packet. |
+| `queue_length` | integer | Packets pending transmission in the priority queue. |
+| `duty_cycle_use` | float | ETSI 1% airtime duty cycle utilization fraction (0.0 - 1.0). |
+| `packets_delivered` | integer | Lifetime total count of acknowledged packets delivered via LoRa. |
+| `packets_lost` | integer | Lifetime total count of dropped/unacknowledged packets. |
+| `is_obstructed` | boolean | True if building BVH geometry occludes line-of-sight to station. |
+| `obstruction_loss_db` | float | Path attenuation from obstructions (e.g. +8 dB concrete, +4 dB debris). |
+| `scaled_distance_m` | float | Scaled radio distance in meters (`worldScale = 40`, 30m arena -> 1200m). |
+| `radio_scaled` | boolean | Always True; indicates radio distance scaling is applied. |
+
+### 2.14 lora_packet
+Packet transmission event log emitted whenever a LoRa frame is queued, transmitted, delivered, or dropped.
+
+Payload Fields:
+| Field | Type | Description |
+|---|---|---|
+| `timestamp` | float | Mission simulation time in seconds. |
+| `frame_type` | integer | Compact binary frame type identifier (1=HEARTBEAT, 2=VICTIM, 3=HAZARD, 4=ACK). |
+| `seq` | integer | Packet sequence number (1 - 65535). |
+| `sf` | integer | Spreading factor used for transmission (7 - 12). |
+| `toa_ms` | float | Semtech AN1200.13 time-on-air in milliseconds. |
+| `bytes` | integer | Payload size in bytes (strictly <= 51 bytes for EU868 DR0). |
+| `rssi` | float | Signal strength at transmission time in dBm. |
+| `snr` | float | Signal-to-noise ratio at transmission time in dB. |
+| `status` | string | Packet lifecycle status: "QUEUED", "TX", "DELIVERED", "DROPPED". |
+| `via` | string | Transport tag: "lora" (or "network" when bypassed). |
 
 ---
 
@@ -205,3 +261,4 @@ Allowed `action` values in `cmd`:
 | `link_cut` | None | Emulate communication link loss (switches to offline buffering). |
 | `link_restore` | None | Emulate communication link restoration (flushes buffer). |
 | `set_mode` | `{"mode": "GPS_NAV" \| "GPS_DENIED", "low_power": bool}` | Update simulation navigation or power mode. |
+| `set_link_mode` | `{"mode": "auto" \| "force_lora" \| "force_offline"}` | Command link mode override (switches between auto zone detection, forced LoRa, or offline). |
