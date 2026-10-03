@@ -4,7 +4,7 @@ import type { MissionModel } from '../types';
 import type { Theme } from '../hooks/useTheme';
 import { HAZARD_HEX, LEVEL_HEX, LEVEL_LABEL, hazardLabel } from '../lib/levels';
 import { arrivedLate, formatClock } from '../lib/time';
-import { BASE_LAT, BASE_LON } from '../lib/geo';
+import { BASE_LAT, BASE_LON, enuToGeodetic } from '../lib/geo';
 
 const HAZARD_ZONE_RADIUS_M = 8;
 
@@ -170,6 +170,67 @@ export default function MapPanel({ model, theme, selectedId, onSelect }: Props) 
       color: '#00e5ff',
       opacity: 0.75,
     }).addTo(map);
+
+    // Ground Station & Predicted RSSI Coverage Rings (Canvas Renderer, Zero SVG)
+    const [stLat, stLng] = enuToGeodetic(-13.0, 13.0);
+    // Outer coverage ring: -125 dBm sensitivity limit (r = 22m)
+    L.circle([stLat, stLng], {
+      renderer: canvasRenderer,
+      radius: 22,
+      color: '#f97316',
+      weight: 1,
+      fillColor: '#f97316',
+      fillOpacity: 0.04,
+      interactive: false,
+    }).addTo(map);
+    // Mid coverage ring: -115 dBm (r = 15m)
+    L.circle([stLat, stLng], {
+      renderer: canvasRenderer,
+      radius: 15,
+      color: '#eab308',
+      weight: 1,
+      fillColor: '#eab308',
+      fillOpacity: 0.06,
+      interactive: false,
+    }).addTo(map);
+    // Inner coverage ring: -95 dBm strong signal (r = 8m)
+    L.circle([stLat, stLng], {
+      renderer: canvasRenderer,
+      radius: 8,
+      color: '#22c55e',
+      weight: 1,
+      fillColor: '#22c55e',
+      fillOpacity: 0.08,
+      interactive: false,
+    }).addTo(map);
+
+    // Ground Station Base Marker
+    const stationIcon = L.divIcon({
+      className: '',
+      html: `<span class="map-station-badge" style="background:#0284c7;color:#fff;font-size:10px;font-weight:700;padding:2px 5px;border-radius:3px;border:1px solid #38bdf8;">BASE</span>`,
+      iconSize: [36, 18],
+      iconAnchor: [18, 9],
+    });
+    L.marker([stLat, stLng], { icon: stationIcon, zIndexOffset: 200 })
+      .bindPopup('<div class="popup-title">Ground Source Station</div><div class="popup-meta">LoRa Gateway & Telemetry Bridge (865 MHz)</div>')
+      .addTo(map);
+
+    // Shaded No-Network Blackout Zone (Canvas Renderer, Zero SVG)
+    const [zLat0, zLng0] = enuToGeodetic(2.0, -3.0);
+    const [zLat1, zLng1] = enuToGeodetic(11.0, -3.0);
+    const [zLat2, zLng2] = enuToGeodetic(11.0, -11.0);
+    const [zLat3, zLng3] = enuToGeodetic(2.0, -11.0);
+    L.polygon([[zLat0, zLng0], [zLat1, zLng1], [zLat2, zLng2], [zLat3, zLng3]], {
+      renderer: canvasRenderer,
+      color: '#ea580c',
+      weight: 1.5,
+      dashArray: '5 4',
+      fillColor: '#ea580c',
+      fillOpacity: 0.18,
+      interactive: true,
+    })
+      .bindPopup('<div class="popup-title">No-Network Zone</div><div class="popup-meta">RF Blackout Area · Autonomous LoRa Link Active</div>')
+      .addTo(map);
 
     const stopFollowing = () => {
       followRef.current = false;
@@ -379,6 +440,12 @@ export default function MapPanel({ model, theme, selectedId, onSelect }: Props) 
               <span className="legend-route" /> Safe route
             </div>
           )}
+          <div className="map-legend__item">
+            <span style={{ display: 'inline-block', width: '10px', height: '10px', background: '#0284c7', borderRadius: '2px', marginRight: '4px' }} /> Base Station & LoRa Coverage
+          </div>
+          <div className="map-legend__item">
+            <span style={{ display: 'inline-block', width: '10px', height: '10px', background: 'rgba(234, 88, 12, 0.4)', border: '1px dashed #ea580c', borderRadius: '2px', marginRight: '4px' }} /> No-Network Zone
+          </div>
         </div>
       </div>
     </section>
